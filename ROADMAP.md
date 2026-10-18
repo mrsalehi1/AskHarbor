@@ -1,102 +1,75 @@
 # Roadmap
 
-AskHarbor is a guided FAQ chatbot today. The widget and API do not call a model yet. The work below is planned and not started.
+AskHarbor is a guided FAQ widget today: one script tag, a launcher, and answers the site owner wrote. The work below is the rest of the product. None of it is started.
 
-Guided options stay available as a fallback when an AI answer is unavailable.
+The widget keeps sending only the selected option id. Saved data is the owner's bot content, plus a count on each option. Those counts have no visitor name, message, or account attached.
 
-## Near term
+## 1. Reliable core
 
 - Replace the in-memory demo repository with durable storage that keeps the same bot and message API.
 - Let a site owner edit the bot name, greeting, color, questions, and answers without changing Python code.
 - Keep the widget on the page when the API is down, and show a short retry state instead of removing it.
 - Tighten keyboard use: focus the panel when it opens, return focus to the launcher when it closes, and keep contrast readable.
+- Honor reduced motion and a readable mobile layout.
 - Add a small local HTML page that loads `widget/dist/askharbor.js` against the demo bot.
 - Run the server tests, Ruff, widget tests, typecheck, and production build in CI.
 
-## AI answer chatbot
+## 2. Content studio
 
-Visitors will be able to type a question and get an answer, not only pick a guided option.
+- Edit the answer tree in an admin screen that runs with the API.
+- Reorder opening options and follow-ups.
+- Write answers in Markdown, with images the owner hosts.
+- Validate option ids, missing follow-ups, and broken links before a save is accepted.
+- Duplicate a bot, then archive one without deleting its history.
+- Keep drafts separate from the live tree.
+- Preview a draft in the widget before it is public.
+- Publish a draft, roll back to an earlier published tree, and diff the two.
+- Import and export a bot as JSON.
 
-- Free-text chat on the existing embed, with the selected guided option still supported.
-- Multi-turn conversation history for the open widget session.
-- Opening statement, suggested questions, and follow-up questions.
-- Stream the answer into the panel as it is generated.
-- Show citations for passages used in the answer.
-- Accept file and image messages when the selected model can read them.
-- Speech-to-text input and text-to-speech playback.
-- Optional moderation before a message is sent or an answer is shown.
-- Remember conversation variables across turns in that chat.
-- Fall back to the guided answer tree when retrieval or the model fails.
+## 3. Widget on the host site
 
-## RAG pipeline
+- Choose launcher corner, offset, and z-index from the embed attributes.
+- Ship a few themes, and keep Shadow DOM from inheriting host styles.
+- Translate the launcher, retry text, and close control. Answer text stays whatever the owner wrote for that locale.
+- Let the owner publish more than one locale on the same bot.
+- Walk back to the previous option inside the open panel. That path stays in the page session and is dropped when the panel closes.
+- Offer a text filter over the current list of options.
+- Show an owner-written message outside configured hours, using the site's timezone on the bot.
+- Open the panel on load when the embed asks for that.
 
-Each bot will answer from its own knowledge, from ingestion through retrieval.
+## 4. Many sites
 
-- Knowledge bases attached to a bot.
-- Upload PDF, PowerPoint, Word, plain text, Markdown, HTML, CSV, and Excel files.
-- Import a web page and refresh synced sources.
-- Extract text from those documents.
-- Chunk with automatic, custom, parent-child, and question-answer modes.
-- Embed chunks and search them in a vector index.
-- Hybrid keyword and vector search, plus reranking.
-- Filter retrieval with document metadata.
-- Set top-k and a minimum relevance score.
-- Test a query against the knowledge base before publishing the bot.
+- Host many bots, each with its own id, branding, locales, and answer tree.
+- Give each bot its own list of allowed site origins.
+- Keep a staging bot and a live bot, and copy a published tree from staging to live.
+- Serve the public config and message routes only for a published bot.
 
-## Workflow
+## 5. Owner workspace
 
-- Build and test an AI workflow on a visual canvas.
-- Ship a workflow as a chat app or as an API call.
-- Include chatflow steps for a back-and-forth assistant.
-- Use steps for a model call, knowledge retrieval, branching, an HTTP request, and a code step.
-- Reuse the same knowledge, tools, and models inside a workflow.
+- Sign the site owner into the admin screen on their own installation.
+- Group bots into sites the owner manages.
+- Record content edits (who on that installation changed which bot, and when) so a publish can be audited.
+- Leave visitor traffic out of that record.
 
-## Model support
+## 6. Option counts
 
-- Connect many proprietary and open-source models through their provider APIs.
-- Accept any OpenAI-compatible endpoint, including a model the owner hosts.
-- Set separate defaults for chat, embeddings, reranking, and speech.
-- Compare two models on the same prompt before choosing one for the bot.
+- Increment a counter when an option id is selected.
+- Show those totals to the owner next to each option.
+- Store the number only. Do not store a visitor identifier with it.
 
-## Prompt workspace
+## 7. Publishing and operations
 
-- Edit the system prompt, variables, and the knowledge attached to a bot.
-- Preview the answer in the same workspace used to edit the prompt.
-- Compare outputs while changing the prompt or the model.
-- Turn on extra chat features, including speech, from that workspace.
+- Document production as a static host for `askharbor.js`, the API process, and an explicit `ASKHARBOR_ALLOWED_ORIGINS` list.
+- Add a Docker Compose setup for the API and its database.
+- Version the embed script so a site can pin a build.
+- Set cache headers and an ETag on public bot config.
+- Add a readiness check next to `/health`.
+- Log process events and status codes. Leave request bodies and option ids out of those logs.
+- Back up and restore bot content, including drafts and published versions.
 
-## Agents
+## 8. Quality
 
-- Run an agent as the chat app or as one step in a workflow.
-- Give the agent skills and tools.
-- Connect tools from a catalog, from MCP servers, and from the owner's own APIs.
-- Let an agent handle files and commands inside a sandbox for open-ended tasks.
-
-## Operations
-
-- Store application logs and review them over time.
-- Annotate production conversations and reuse a corrected answer.
-- Improve prompts, knowledge, and model choice from that production record.
-- Export traces to an external observability tool.
-
-## APIs
-
-- Expose chat, text generation, workflow runs, and knowledge management over HTTP.
-- Issue API keys for those endpoints.
-- Keep the embed script as the website integration.
-- Publish a bot to the website widget, a hosted page, or the API.
-
-## Workspace
-
-- Host more than one bot, each with its own id, branding, knowledge, and answer tree.
-- Invite teammates and give them roles.
-- Run the stack self-hosted.
-- Offer a hosted setup later, without a separate rewrite.
-- Add single sign-on and stricter access control for larger teams.
-- Translate the workspace interface.
-
-## Widget and release work
-
-- Let the embed choose launcher position and a few theme settings while Shadow DOM still isolates host styles.
-- Document a production layout: static hosting for the script, the API process, and an explicit `ASKHARBOR_ALLOWED_ORIGINS` list.
-- Add tests for CORS, unknown follow-up ids, retrieval, and bots loaded from the durable store.
+- Test CORS, unknown follow-up ids, draft versus published bots, import validation, and rollback.
+- Test keyboard open and close, the retry state, and locale switching.
+- Add an example site in the repo that embeds the demo bot.
+- Document the admin flow, the JSON format, and how to move from the in-memory demo to durable storage.

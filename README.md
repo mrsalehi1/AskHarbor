@@ -2,7 +2,7 @@
 
 AskHarbor is a small embeddable support chatbot for people who own a website and want a guided FAQ in the corner of the page. A site adds one script tag and gets a bottom-corner chat launcher. Questions, answers, branding, and follow-up choices come from a Python API, so the content can change without editing the host website.
 
-It is a personal project. The demo bot is made-up sample content, including the address `support@example.com`. This release does not call an AI model. Planned work adds an AI answer chatbot and retrieval over the site owner's documents, with the guided options kept as a fallback.
+It is a personal project. The demo bot is made-up sample content, including the address `support@example.com`. The widget sends only the selected option id. The server stores the bot content the site owner wrote.
 
 ## Who it is for
 
@@ -131,13 +131,11 @@ npm run build
 
 The current release is the guided FAQ widget and API. Planned work is listed in [ROADMAP.md](ROADMAP.md):
 
-- store bots outside the in-memory demo repository
-- edit bot content without changing Python
-- show a retry state when the API is unavailable
-- improve keyboard and focus behavior
-- add a local embed page and CI
-- answer free-text questions with retrieval over uploaded documents, and cite the passages used
-- add workflows, model connections, a prompt workspace, agents, logs, and APIs for those features
+- store bots outside the in-memory demo repository and edit them without changing Python
+- draft, preview, publish, and roll back answer trees
+- support many bots, themes, locales, and launcher placements
+- keep a retry state, stronger keyboard behavior, and a local embed page
+- import, export, and back up bot content, and run CI for the server and the widget
 
 ## License
 
