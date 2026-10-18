@@ -1,16 +1,24 @@
 # AskHarbor
 
-AskHarbor is a small embeddable support chatbot. A site adds one script tag and
-gets a bottom-corner chat launcher. Questions, answers, branding, and follow-up
-choices come from a Python API, so content can change without editing the host
-website.
+AskHarbor is a small embeddable support chatbot for people who own a website and want a guided FAQ in the corner of the page. A site adds one script tag and gets a bottom-corner chat launcher. Questions, answers, branding, and follow-up choices come from a Python API, so the content can change without editing the host website.
 
-This release is a guided FAQ chatbot. It does not call an AI model yet.
+It is a personal project. The demo bot is made-up sample content, including the address `support@example.com`. This release does not call an AI model.
+
+## Who it is for
+
+Site owners and developers who want a script-tag support widget with server-owned answers. The widget is for visitors of those sites. It sends only the selected option id to the API.
+
+## Built with
+
+- `widget/` — TypeScript, bundled with esbuild, tested with Vitest. Node.js 20 or newer.
+- `server/` — Python 3.11 or newer, FastAPI, Pydantic, and Uvicorn. Tests use pytest. Ruff checks the Python code.
 
 ## Project layout
 
-- `widget/` — dependency-free browser widget written in TypeScript
+- `widget/` — dependency-free browser widget
 - `server/` — FastAPI service and server-owned bot content
+- `ROADMAP.md` — work still ahead
+- `LICENSE` — MIT
 
 ## Run locally
 
@@ -22,8 +30,11 @@ python -m venv .venv
 # Windows PowerShell
 .\.venv\Scripts\Activate.ps1
 python -m pip install -e ".[dev]"
+copy ..\.env.example .env
 uvicorn app.main:app --reload --port 8000
 ```
+
+On macOS or Linux, use `cp ../.env.example .env` instead of `copy`.
 
 Build the widget with Node.js 20 or newer:
 
@@ -33,8 +44,7 @@ npm install
 npm run build
 ```
 
-Serve `widget/dist/askharbor.js` from any static host. During local development,
-one option is `python -m http.server 4173 --directory widget/dist`.
+Serve `widget/dist/askharbor.js` from any static host. During local development, one option is `python -m http.server 4173 --directory widget/dist`.
 
 ## Embed
 
@@ -49,32 +59,27 @@ Add the compiled script immediately before the closing `body` tag:
 ></script>
 ```
 
-The widget uses Shadow DOM to avoid inheriting styles from the host website.
-It sends only the selected option ID to the API.
+The widget uses Shadow DOM so it does not inherit styles from the host website. It sends only the selected option id to the API.
 
-For application-controlled initialization, bundle the TypeScript package and
-call `create({ apiUrl, botId, container? })`.
+For application-controlled initialization, bundle the TypeScript package and call `create({ apiUrl, botId, container? })`.
 
 ## Configure a bot
 
-The MVP bot lives in `server/app/repository.py`. Each bot contains:
+The sample bot lives in `server/app/repository.py`. It is fictional demo content, not customer data. Each bot contains:
 
 - public branding and the opening options
-- answer nodes keyed by stable option IDs
-- optional follow-up option IDs
+- answer nodes keyed by stable option ids
+- optional follow-up option ids
 
-Replace the demo support address and content before deployment. A database can
-later implement the same repository interface without changing the endpoints
-or widget.
+Replace the demo support address and content before you use a bot for a real site. A database can later implement the same repository interface without changing the endpoints or the widget.
 
-Set allowed browser origins with a comma-separated environment variable:
+Copy `.env.example` to `server/.env` and set the sites allowed to call the API:
 
 ```text
 ASKHARBOR_ALLOWED_ORIGINS=https://www.example.com,https://app.example.com
 ```
 
-The default `*` value is convenient for local development. Production should
-list only websites that are allowed to embed the bot.
+`.env` is listed in `.gitignore`. The example file contains placeholders only. The default `*` value is for local development. A public deployment should list only websites that are allowed to embed the bot.
 
 ## API
 
@@ -84,8 +89,7 @@ Returns `{"status":"ok"}`.
 
 ### `GET /api/v1/bots/{bot_id}`
 
-Returns the bot name, greeting, launcher label, primary color, and opening
-options. Unknown bots return `404`.
+Returns the bot name, greeting, launcher label, primary color, and opening options. Unknown bots return `404`.
 
 ### `POST /api/v1/bots/{bot_id}/messages`
 
@@ -106,7 +110,7 @@ Response:
 }
 ```
 
-Unknown option IDs return `400`; malformed requests return `422`.
+Unknown option ids return `400`. Malformed requests return `422`.
 
 Interactive API documentation is available at `/docs` while the server runs.
 
@@ -123,14 +127,17 @@ npm run typecheck
 npm run build
 ```
 
-## Future AI and RAG support
+## Plans
 
-The message endpoint is the compatibility boundary for a future answer engine.
-A later repository/service can accept free-text messages, retrieve relevant
-documents from a vector store, and ask a model to answer with citations. Keep
-tenant and bot IDs in that layer, validate document access before retrieval,
-and preserve the existing guided options as a fallback when AI is unavailable.
+The current release is the guided FAQ widget and API. Planned work is listed in [ROADMAP.md](ROADMAP.md):
+
+- store bots outside the in-memory demo repository
+- edit bot content without changing Python
+- show a retry state when the API is unavailable
+- improve keyboard and focus behavior
+- add a local embed page and CI
+- support more than one bot
 
 ## License
 
-MIT
+MIT. The full text is in `LICENSE` at the top of this repository.
