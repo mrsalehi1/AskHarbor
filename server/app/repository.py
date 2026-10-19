@@ -22,8 +22,8 @@ class BotRepository:
             "features": AnswerNode(
                 label="What can this chatbot do?",
                 answer=(
-                    "This version provides guided answers from your server. AI and RAG support "
-                    "can be added later without changing the embed code."
+                    "This version provides guided answers from your server. You choose a question "
+                    "and receive a predefined answer with any follow up choices."
                 ),
                 next_option_ids=["customize"],
             ),

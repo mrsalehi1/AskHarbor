@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>AskHarbor local demo</title>
+    <style>
+      :root { font-family: system-ui, sans-serif; color: #17233b; background: #f3f6fb; }
+      body { margin: 0; }
+      main { max-width: 46rem; margin: 10vh auto; padding: 2rem; }
+      .eyebrow { color: #155eef; font-weight: 700; }
+      h1 { font-size: clamp(2rem, 6vw, 3.4rem); line-height: 1.1; margin: 1rem 0; }
+      p, li { font-size: 1.05rem; line-height: 1.7; }
+      .card { background: #fff; padding: 1.5rem; margin-top: 2rem; border-radius: 1rem; }
+      a { color: #155eef; }
+      code { overflow-wrap: anywhere; }
+      :focus-visible { outline: 3px solid #155eef; outline-offset: 4px; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <p class="eyebrow">AskHarbor</p>
+      <h1>Common questions, a click away.</h1>
+      <p>This is a local example website. Open the chat button in the corner to try the guided FAQ widget.</p>
+      <section class="card" aria-labelledby="demo-heading">
+        <h2 id="demo-heading">Try the demo</h2>
+        <ol>
+          <li>Open the chat and choose a question.</li>
+          <li>Follow an answer to its next choices.</li>
+          <li>Close the panel with its button or the Escape key.</li>
+        </ol>
+        <p>The answers are fictional examples. This page has no contact form or visitor account.</p>
+        <p>If the launcher is missing, check that the API is running on port 8000 and the widget has been built.</p>
+        <p><a href="http://127.0.0.1:8000/docs">Open the local API documentation</a></p>
+      </section>
+    </main>
+    <script
+      src="./askharbor.js"
+      data-api-url="http://127.0.0.1:8000"
+      data-bot-id="demo"
+      defer
+    ></script>
+  </body>
+</html>
