@@ -22,8 +22,8 @@ class BotRepository:
             "features": AnswerNode(
                 label="What can this chatbot do?",
                 answer=(
-                    "This version provides guided answers from your server. Questions, follow-ups, "
-                    "and branding all come from the bot configuration."
+                    "This version provides guided answers from your server. You choose a question "
+                    "and receive a predefined answer with any follow up choices."
                 ),
                 next_option_ids=["customize"],
             ),

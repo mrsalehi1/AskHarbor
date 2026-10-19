@@ -19,3 +19,4 @@ id_rsa.pub
 credentials.json
 secrets.json
 .DS_Store
+*.log

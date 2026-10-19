@@ -1,75 +1,78 @@
 # Roadmap
 
-AskHarbor is a guided FAQ widget today: one script tag, a launcher, and answers the site owner wrote. The work below is the rest of the product. None of it is started.
+AskHarbor's next stage is a dependable guided FAQ tool that a site owner can configure and embed. The plan uses predefined answers and public reference content. It replaces the earlier AI and RAG direction.
 
-The widget keeps sending only the selected option id. Saved data is the owner's bot content, plus a count on each option. Those counts have no visitor name, message, or account attached.
+## Starting point
 
-## 1. Reliable core
+The current prototype has a TypeScript widget, a FastAPI service, one fictional demo bot, basic API and widget tests, and a local example page. Bot definitions are still written in Python. The setup and CI added alongside this roadmap are preparation work and are excluded from the estimates below.
 
-- Replace the in-memory demo repository with durable storage that keeps the same bot and message API.
-- Let a site owner edit the bot name, greeting, color, questions, and answers without changing Python code.
-- Keep the widget on the page when the API is down, and show a short retry state instead of removing it.
-- Tighten keyboard use: focus the panel when it opens, return focus to the launcher when it closes, and keep contrast readable.
-- Honor reduced motion and a readable mobile layout.
-- Add a small local HTML page that loads `widget/dist/askharbor.js` against the demo bot.
-- Run the server tests, Ruff, widget tests, typecheck, and production build in CI.
+## 1. Make answer flows reliable
 
-## 2. Content studio
+Estimated effort: 4 to 6 hours.
 
-- Edit the answer tree in an admin screen that runs with the API.
-- Reorder opening options and follow-ups.
-- Write answers in Markdown, with images the owner hosts.
-- Validate option ids, missing follow-ups, and broken links before a save is accepted.
-- Duplicate a bot, then archive one without deleting its history.
-- Keep drafts separate from the live tree.
-- Preview a draft in the widget before it is public.
-- Publish a draft, roll back to an earlier published tree, and diff the two.
-- Import and export a bot as JSON.
+1. Fix the stale error messages described in [issue 1](https://github.com/mrsalehi1/AskHarbor/issues/1). A successful retry should clear the earlier failure without duplicating the question.
+2. Handle empty and incorrectly formatted origin settings with clear validation. See [issue 2](https://github.com/mrsalehi1/AskHarbor/issues/2) and [issue 3](https://github.com/mrsalehi1/AskHarbor/issues/3).
+3. Detect missing answer references instead of silently removing follow up options. See [issue 4](https://github.com/mrsalehi1/AskHarbor/issues/4).
+4. Read the API version from package metadata. See [issue 5](https://github.com/mrsalehi1/AskHarbor/issues/5).
+5. Add regression tests for the corrected behavior, including repeated failures and recovery.
 
-## 3. Widget on the host site
+Done when valid conversations still work, invalid content produces useful errors, and the existing issues have passing regression coverage.
 
-- Choose launcher corner, offset, and z-index from the embed attributes.
-- Ship a few themes, and keep Shadow DOM from inheriting host styles.
-- Translate the launcher, retry text, and close control. Answer text stays whatever the owner wrote for that locale.
-- Let the owner publish more than one locale on the same bot.
-- Walk back to the previous option inside the open panel. That path stays in the page session and is dropped when the panel closes.
-- Offer a text filter over the current list of options.
-- Show an owner-written message outside configured hours, using the site's timezone on the bot.
-- Open the panel on load when the embed asks for that.
+## 2. Load bot content from files
 
-## 4. Many sites
+Estimated effort: 6 to 8 hours.
 
-- Host many bots, each with its own id, branding, locales, and answer tree.
-- Give each bot its own list of allowed site origins.
-- Keep a staging bot and a live bot, and copy a published tree from staging to live.
-- Serve the public config and message routes only for a published bot.
+1. Define a versioned JSON format for branding, opening questions, answer nodes and follow up choices.
+2. Load a configured content file instead of editing Python to change answers.
+3. Validate duplicate IDs, missing references, empty labels, invalid colors and malformed files.
+4. Make import and reload atomic so rejected content leaves the last valid definition available.
+5. Keep the fictional demo as an example and document how to create a second bot.
 
-## 5. Owner workspace
+Done when two independent bots can be configured from files, valid content survives reload, and rejected changes leave existing content intact.
 
-- Sign the site owner into the admin screen on their own installation.
-- Group bots into sites the owner manages.
-- Record content edits (who on that installation changed which bot, and when) so a publish can be audited.
-- Leave visitor traffic out of that record.
+## 3. Add a local content editor
 
-## 6. Option counts
+Estimated effort: 8 to 12 hours.
 
-- Increment a counter when an option id is selected.
-- Show those totals to the owner next to each option.
-- Store the number only. Do not store a visitor identifier with it.
+1. Let a site owner edit branding, questions, answers and follow up choices in the browser.
+2. Show a draft conversation preview before exporting a bot definition.
+3. Support JSON import and export using the same validation rules as the API.
+4. Preserve the current draft when an import fails and explain the error.
+5. Keep the editor local, using public or fictional FAQ content and browser file operations.
 
-## 7. Publishing and operations
+Done when a user can create, preview, export and reload a complete bot without editing Python. Invalid imports must preserve the draft. The exported file must load successfully in the API.
 
-- Document production as a static host for `askharbor.js`, the API process, and an explicit `ASKHARBOR_ALLOWED_ORIGINS` list.
-- Add a Docker Compose setup for the API and its database.
-- Version the embed script so a site can pin a build.
-- Set cache headers and an ETag on public bot config.
-- Add a readiness check next to `/health`.
-- Log process events and status codes. Leave request bodies and option ids out of those logs.
-- Back up and restore bot content, including drafts and published versions.
+## 4. Improve accessibility and browser behavior
 
-## 8. Quality
+Estimated effort: 4 to 6 hours.
 
-- Test CORS, unknown follow-up ids, draft versus published bots, import validation, and rollback.
-- Test keyboard open and close, the retry state, and locale switching.
-- Add an example site in the repo that embeds the demo bot.
-- Document the admin flow, the JSON format, and how to move from the in-memory demo to durable storage.
+1. Check opening, closing, Escape, keyboard focus and screen reader announcements.
+2. Test narrow screens, long answers and long question labels.
+3. Cover loading errors, delayed responses, retries and removal of the widget while a request is pending.
+4. Add browser tests with a local API or controlled responses.
+
+Done when the documented flows work with a keyboard and on mobile layouts, with browser tests for the important failure cases.
+
+## 5. Make demonstration deployments repeatable
+
+Estimated effort: 4 to 6 hours.
+
+1. Package the API and static widget for a documented AWS demonstration deployment.
+2. Keep infrastructure configuration in the repository and use placeholders for account specific settings.
+3. Check the health endpoint during deployment and document rollback and cleanup.
+4. Add configurable request limits, or enforce them at the deployment proxy, as described in [issue 6](https://github.com/mrsalehi1/AskHarbor/issues/6).
+5. Use the fictional bot for deployment checks and document the host's request logging settings.
+
+Done when a fresh deployment serves the widget and demo API, health checks succeed, and rollback and cleanup have been rehearsed. Cloud checks require a separately configured account; local development remains available without one.
+
+## Planning estimate
+
+The open work above is estimated at 26 to 38 hours, including implementation, tests and documentation. These are planning estimates based on the current prototype. Update them as work is completed or a task changes.
+
+All five stages remain planned. Existing issue fixes are part of stage 1 and stage 5, rather than additional work counted twice.
+
+## Data and product boundaries
+
+Development examples use fictional content. The current plan does not add visitor profiles, contact collection, stored conversations, customer datasets or regulated records. Request metadata at the hosting layer needs separate attention when testing a deployment.
+
+Model training, model evaluation, AI inference infrastructure, document embeddings and RAG are outside this roadmap. Any later change in direction should be recorded explicitly before that work begins.

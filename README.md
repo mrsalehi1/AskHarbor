@@ -1,142 +1,131 @@
 # AskHarbor
 
-AskHarbor is a small embeddable support chatbot for people who own a website and want a guided FAQ in the corner of the page. A site adds one script tag and gets a bottom-corner chat launcher. Questions, answers, branding, and follow-up choices come from a Python API, so the content can change without editing the host website.
+AskHarbor adds a small guided FAQ widget to a website. Visitors choose a question and receive a predefined answer, with follow up choices when needed. It is for site owners who want to publish common answers without building a support interface from scratch.
 
-It is a personal project. The demo bot is made-up sample content, including the address `support@example.com`. The widget sends only the selected option id. The server stores the bot content the site owner wrote.
+The browser widget uses TypeScript and Shadow DOM. A Python FastAPI service supplies the branding, questions and answers.
 
-## Who it is for
+## Current status
 
-Site owners and developers who want a script-tag support widget with server-owned answers. The widget is for visitors of those sites. It sends only the selected option id to the API.
+This is an early prototype with one fictional demo bot. It supports embedding, configurable branding, guided answer flows and a retry option when a request fails. Automated tests cover the basic API and widget flows.
 
-## Built with
+Bot content currently lives in `server/app/repository.py`. Content files, a visual editor and deployment automation are planned work. The [roadmap](ROADMAP.md) separates that work from the features available today.
 
-- `widget/` — TypeScript, bundled with esbuild, tested with Vitest. Node.js 20 or newer.
-- `server/` — Python 3.11 or newer, FastAPI, Pydantic, and Uvicorn. Tests use pytest. Ruff checks the Python code.
+The active product plan is guided FAQ support using public reference content. Earlier AI and RAG ideas are outside this plan. The current code does not call a model or retrieve documents.
 
-## Project layout
+## Requirements
 
-- `widget/` — dependency-free browser widget
-- `server/` — FastAPI service and server-owned bot content
-- `ROADMAP.md` — work still ahead
-- `LICENSE` — MIT
+1. Python 3.11 or newer.
+2. Node.js 22 or newer.
+3. A browser for the local demo.
 
-## Run locally
+Building and installing dependencies needs package registry access. Once those dependencies are installed, the demo uses only local services. Docker and a cloud account are not required.
 
-The server requires Python 3.11 or newer.
+## Run the API
+
+From the repository root:
 
 ```bash
 cd server
 python -m venv .venv
-# Windows PowerShell
-.\.venv\Scripts\Activate.ps1
-python -m pip install -e ".[dev]"
-copy ..\.env.example .env
-uvicorn app.main:app --reload --port 8000
 ```
 
-On macOS or Linux, use `cp ../.env.example .env` instead of `copy`.
+Activate the environment on macOS or Linux:
 
-Build the widget with Node.js 20 or newer:
+```bash
+source .venv/bin/activate
+```
+
+On Windows PowerShell:
+
+```powershell
+.\.venv\Scripts\Activate.ps1
+```
+
+Copy `server/.env.example` to `server/.env`. Then, from `server/` with the environment active:
+
+```bash
+python -m pip install -e ".[dev]"
+python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --no-access-log
+```
+
+The API documentation is at [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs). The example origin setting permits the demo at `http://127.0.0.1:4173`.
+
+## Build and open the demo
+
+In another terminal, from the repository root:
 
 ```bash
 cd widget
-npm install
+npm ci
 npm run build
 ```
 
-Serve `widget/dist/askharbor.js` from any static host. During local development, one option is `python -m http.server 4173 --directory widget/dist`.
+In a third terminal, from the repository root:
 
-## Embed
+```bash
+python -m http.server 4173 --bind 127.0.0.1 --directory widget/dist
+```
 
-Add the compiled script immediately before the closing `body` tag:
+Open [http://127.0.0.1:4173/](http://127.0.0.1:4173/). The build copies the example page into the public output folder. Use the chat button to select a question, follow an answer and close the panel. The page uses fictional support content and does not request visitor details.
+
+## Embed the widget
+
+Serve the built `widget/dist/askharbor.js` file and add this before the host page's closing `body` tag:
 
 ```html
 <script
   src="https://cdn.example.com/askharbor.js"
-  data-api-url="https://support-api.example.com"
+  data-api-url="https://faq-api.example.com"
   data-bot-id="demo"
   defer
 ></script>
 ```
 
-The widget uses Shadow DOM so it does not inherit styles from the host website. It sends only the selected option id to the API.
+These addresses are placeholders. Replace them with your own widget and API addresses when testing a deployment. Set `ASKHARBOR_ALLOWED_ORIGINS` to the exact host origins, separated by commas. Keep origin values free of paths and trailing slashes.
 
-For application-controlled initialization, bundle the TypeScript package and call `create({ apiUrl, botId, container? })`.
+The widget sends a selected option ID to the API. It has no free text field, visitor account system, transcript database or analytics integration. Hosting services can still record request metadata, so check their logging settings before using the application beyond a local demo.
 
-## Configure a bot
-
-The sample bot lives in `server/app/repository.py`. It is fictional demo content, not customer data. Each bot contains:
-
-- public branding and the opening options
-- answer nodes keyed by stable option ids
-- optional follow-up option ids
-
-Replace the demo support address and content before you use a bot for a real site. A database can later implement the same repository interface without changing the endpoints or the widget.
-
-Copy `.env.example` to `server/.env` and set the sites allowed to call the API:
-
-```text
-ASKHARBOR_ALLOWED_ORIGINS=https://www.example.com,https://app.example.com
-```
-
-`.env` is listed in `.gitignore`. The example file contains placeholders only. The default `*` value is for local development. A public deployment should list only websites that are allowed to embed the bot.
+The `create({ apiUrl, botId, container? })` function is also exported for applications that import the TypeScript source.
 
 ## API
 
-### `GET /health`
+| Endpoint | Behavior |
+| :--- | :--- |
+| `GET /health` | Returns `{"status":"ok"}`. |
+| `GET /api/v1/bots/{bot_id}` | Returns the branding, greeting and opening questions. |
+| `POST /api/v1/bots/{bot_id}/messages` | Accepts `{"option_id":"getting-started"}` and returns an answer with follow up choices. |
 
-Returns `{"status":"ok"}`.
+Unknown bots return `404`. Unknown option IDs return `400`. Invalid request fields return `422`.
 
-### `GET /api/v1/bots/{bot_id}`
+## Checks
 
-Returns the bot name, greeting, launcher label, primary color, and opening options. Unknown bots return `404`.
-
-### `POST /api/v1/bots/{bot_id}/messages`
-
-Request:
-
-```json
-{"option_id":"getting-started"}
-```
-
-Response:
-
-```json
-{
-  "answer": "Add the AskHarbor script before your closing body tag...",
-  "options": [
-    {"id": "installation", "label": "Show installation details"}
-  ]
-}
-```
-
-Unknown option ids return `400`. Malformed requests return `422`.
-
-Interactive API documentation is available at `/docs` while the server runs.
-
-## Test
+From `server/`, with its environment active:
 
 ```bash
-cd server
-pytest
-ruff check .
+python -m pytest
+python -m ruff check .
+```
 
-cd ../widget
+From `widget/`:
+
+```bash
 npm test
 npm run typecheck
 npm run build
 ```
 
-## Plans
+GitHub Actions runs these checks on pushes and pull requests. Browser checks for keyboard navigation, mobile layout and request failures are described in [CONTRIBUTING.md](CONTRIBUTING.md).
 
-The current release is the guided FAQ widget and API. Planned work is listed in [ROADMAP.md](ROADMAP.md):
+## Project files
 
-- store bots outside the in-memory demo repository and edit them without changing Python
-- draft, preview, publish, and roll back answer trees
-- support many bots, themes, locales, and launcher placements
-- keep a retry state, stronger keyboard behavior, and a local embed page
-- import, export, and back up bot content, and run CI for the server and the widget
+| Location | Purpose |
+| :--- | :--- |
+| `widget/src/` | Browser widget and styles. |
+| `server/app/` | API, settings and demo answers. |
+| `server/tests/` and `widget/tests/` | Automated tests. |
+| `examples/demo.html` | Local example host page. |
+| [ROADMAP.md](ROADMAP.md) | Planned work and completion criteria. |
 
 ## License
 
-MIT. The full text is in `LICENSE` at the top of this repository.
+[MIT](LICENSE).
