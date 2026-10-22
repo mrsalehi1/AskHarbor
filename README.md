@@ -16,15 +16,26 @@ The active product plan is guided FAQ support using public reference content. Ea
 
 Open three terminals from the repository root. The first runs the API, the second builds the widget, and the third serves the example page.
 
+On Ubuntu or Debian, install the system packages once before anything else:
+
+```bash
+sudo apt install python3 python3-venv python3-pip nodejs npm
+```
+
+Ubuntu's `python3-venv` package is required or the virtual environment will fail with an `ensurepip` error. Check that `node --version` reports 22 or newer. If the distribution package is older, install Node.js 22 from [nodejs.org](https://nodejs.org/) or with `nvm`.
+
 Terminal 1, the API:
 
 ```bash
 cd server
-python -m venv .venv && source .venv/bin/activate   # Windows: .\.venv\Scripts\Activate.ps1
+python3 -m venv .venv
+source .venv/bin/activate            # Windows PowerShell: .\.venv\Scripts\Activate.ps1
 cp .env.example .env
 python -m pip install -e ".[dev]"
 python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --no-access-log
 ```
+
+Inside the activated environment, `python` points at the virtual environment's interpreter, so the remaining commands use `python`.
 
 Terminal 2, the widget:
 
@@ -37,12 +48,12 @@ npm run build
 Terminal 3, the example page:
 
 ```bash
-python -m http.server 4173 --bind 127.0.0.1 --directory widget/dist
+python3 -m http.server 4173 --bind 127.0.0.1 --directory widget/dist
 ```
 
 Open [http://127.0.0.1:4173/](http://127.0.0.1:4173/). The page is `examples/demo.html` served next to the built widget. It talks to the demo bot at `http://127.0.0.1:8000`, whose fictional questions and answers live in `server/app/repository.py`. Click the chat button, pick a question, and follow the answer to its follow up choices.
 
-On Debian or Ubuntu, `python -m venv` needs the `python3-venv` package. If the chat button does not appear, confirm the API is running and that `server/.env` allows `http://127.0.0.1:4173`.
+If the chat button does not appear, confirm the API is running and that `server/.env` allows `http://127.0.0.1:4173`.
 
 ### Try the retry flow
 
@@ -53,6 +64,14 @@ This checks the behavior fixed for [issue 1](https://github.com/mrsalehi1/AskHar
 3. Choose it again while the API is still down. The error line and retry option stay single. Nothing stacks.
 4. Restart the API and choose the question once more.
 5. The error disappears. The question, answer and follow up choices each appear once.
+
+### Try the back to menu button
+
+1. Open the chat and choose a question, then follow it to an answer with no further choices.
+2. Use the "Menu" button in the panel header, by mouse or by tabbing to it and pressing Enter.
+3. The greeting and the original opening questions return without a page reload.
+4. Stop the API, choose a question, and use the menu button while the error is showing. The error and retry option are cleared.
+5. Restart the API, choose a question, and use the menu button before the answer arrives. The late answer is ignored and the menu stays in place.
 
 The detailed sections below cover each step and the embed snippet for other sites.
 
@@ -70,7 +89,7 @@ From the repository root:
 
 ```bash
 cd server
-python -m venv .venv
+python3 -m venv .venv
 ```
 
 Activate the environment on macOS or Linux:
@@ -107,7 +126,7 @@ npm run build
 In a third terminal, from the repository root:
 
 ```bash
-python -m http.server 4173 --bind 127.0.0.1 --directory widget/dist
+python3 -m http.server 4173 --bind 127.0.0.1 --directory widget/dist
 ```
 
 Open [http://127.0.0.1:4173/](http://127.0.0.1:4173/). The build copies the example page into the public output folder. Use the chat button to select a question, follow an answer and close the panel. The page uses fictional support content and does not request visitor details.
