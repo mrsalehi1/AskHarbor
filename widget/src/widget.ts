@@ -10,6 +10,9 @@ export class AskHarborWidget {
   private panel?: HTMLElement;
   private conversation?: HTMLElement;
   private launcher?: HTMLButtonElement;
+  private backButton?: HTMLButtonElement;
+  /** Incremented when the visitor leaves a flow, so late replies can be ignored. */
+  private requestGeneration = 0;
 
   constructor(options: WidgetOptions) {
     this.apiUrl = options.apiUrl.replace(/\/$/, "");
@@ -72,7 +75,16 @@ export class AskHarborWidget {
     close.setAttribute("aria-label", "Close chat");
     close.textContent = "×";
     close.addEventListener("click", () => this.toggle(false));
-    header.append(title, close);
+    this.backButton = document.createElement("button");
+    this.backButton.className = "back";
+    this.backButton.type = "button";
+    this.backButton.textContent = "Back to menu";
+    this.backButton.hidden = true;
+    this.backButton.addEventListener("click", () => this.backToMenu());
+    const controls = document.createElement("div");
+    controls.className = "controls";
+    controls.append(this.backButton, close);
+    header.append(title, controls);
 
     this.conversation = document.createElement("div");
     this.conversation.className = "conversation";
@@ -133,6 +145,7 @@ export class AskHarborWidget {
     });
     this.addMessage(option.label, "user");
     group.remove();
+    if (this.backButton) this.backButton.hidden = false;
 
     const status = document.createElement("p");
     status.className = "status";
@@ -145,6 +158,7 @@ export class AskHarborWidget {
    * every attempt, so a retry never duplicates the question or stacks errors.
    */
   private async requestAnswer(option: ChatOption, status: HTMLElement): Promise<void> {
+    const generation = this.requestGeneration;
     status.textContent = "Finding an answer…";
     if (this.conversation) this.conversation.scrollTop = this.conversation.scrollHeight;
 
@@ -159,16 +173,29 @@ export class AskHarborWidget {
       );
       if (!response.ok) throw new Error(`Message request failed (${response.status})`);
       const result = (await response.json()) as MessageResponse;
+      if (generation !== this.requestGeneration) return;
       status.remove();
       this.addMessage(result.answer, "bot");
       this.showOptions(result.options);
     } catch (error) {
       console.error("AskHarbor message failed:", error);
+      if (generation !== this.requestGeneration) return;
       status.textContent = "Sorry, the answer could not be loaded. Please try again.";
       this.showOptions([option], (retryOption, retryGroup) => {
         retryGroup.remove();
         void this.requestAnswer(retryOption, status);
       });
     }
+  }
+
+  /** Restores the opening questions from the already loaded configuration. */
+  private backToMenu(): void {
+    if (!this.config || !this.conversation) return;
+    this.requestGeneration += 1;
+    this.conversation.replaceChildren();
+    this.addMessage(this.config.greeting, "bot");
+    this.showOptions(this.config.options);
+    if (this.backButton) this.backButton.hidden = true;
+    this.conversation.querySelector<HTMLButtonElement>(".option")?.focus();
   }
 }

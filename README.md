@@ -16,11 +16,19 @@ The active product plan is guided FAQ support using public reference content. Ea
 
 Open three terminals from the repository root. The first runs the API, the second builds the widget, and the third serves the example page.
 
+On Ubuntu or Debian, install the system packages first:
+
+```bash
+sudo apt install python3 python3-venv python3-pip nodejs npm
+```
+
+The repository needs Python 3.11 or newer and Node.js 22 or newer; check with `python3 --version` and `node --version`. If your distribution ships older versions, install them from [python.org](https://www.python.org/downloads/) and [nodejs.org](https://nodejs.org/). On macOS and Windows, the installers from those two sites provide everything, and `venv` and `pip` are included with Python.
+
 Terminal 1, the API:
 
 ```bash
 cd server
-python -m venv .venv && source .venv/bin/activate   # Windows: .\.venv\Scripts\Activate.ps1
+python3 -m venv .venv && source .venv/bin/activate   # Windows: .\.venv\Scripts\Activate.ps1
 cp .env.example .env
 python -m pip install -e ".[dev]"
 python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --no-access-log
@@ -37,12 +45,12 @@ npm run build
 Terminal 3, the example page:
 
 ```bash
-python -m http.server 4173 --bind 127.0.0.1 --directory widget/dist
+python3 -m http.server 4173 --bind 127.0.0.1 --directory widget/dist
 ```
 
-Open [http://127.0.0.1:4173/](http://127.0.0.1:4173/). The page is `examples/demo.html` served next to the built widget. It talks to the demo bot at `http://127.0.0.1:8000`, whose fictional questions and answers live in `server/app/repository.py`. Click the chat button, pick a question, and follow the answer to its follow up choices.
+Open [http://127.0.0.1:4173/](http://127.0.0.1:4173/). The page is `examples/demo.html` served next to the built widget. It talks to the demo bot at `http://127.0.0.1:8000`, whose fictional questions and answers live in `server/app/repository.py`. Click the chat button, pick a question, and follow the answer to its follow up choices. The Back to menu button in the panel header returns to the opening questions at any point after the first choice, without reloading the page.
 
-On Debian or Ubuntu, `python -m venv` needs the `python3-venv` package. If the chat button does not appear, confirm the API is running and that `server/.env` allows `http://127.0.0.1:4173`.
+If the chat button does not appear, confirm the API is running and that `server/.env` allows `http://127.0.0.1:4173`.
 
 ### Try the retry flow
 
@@ -70,7 +78,7 @@ From the repository root:
 
 ```bash
 cd server
-python -m venv .venv
+python3 -m venv .venv
 ```
 
 Activate the environment on macOS or Linux:
@@ -107,7 +115,7 @@ npm run build
 In a third terminal, from the repository root:
 
 ```bash
-python -m http.server 4173 --bind 127.0.0.1 --directory widget/dist
+python3 -m http.server 4173 --bind 127.0.0.1 --directory widget/dist
 ```
 
 Open [http://127.0.0.1:4173/](http://127.0.0.1:4173/). The build copies the example page into the public output folder. Use the chat button to select a question, follow an answer and close the panel. The page uses fictional support content and does not request visitor details.

@@ -24,7 +24,7 @@ export const styles = `
     width: 56px;
     z-index: 2147483000;
   }
-  .launcher:focus-visible, .close:focus-visible, .option:focus-visible {
+  .launcher:focus-visible, .close:focus-visible, .option:focus-visible, .back:focus-visible {
     outline: 3px solid #84adff;
     outline-offset: 2px;
   }
@@ -54,6 +54,18 @@ export const styles = `
     padding: 12px 16px;
   }
   .title { font-size: 16px; font-weight: 650; }
+  .controls { align-items: center; display: flex; gap: 8px; }
+  .back {
+    background: rgb(255 255 255 / 16%);
+    border: 0;
+    border-radius: 8px;
+    color: white;
+    cursor: pointer;
+    font-size: 13px;
+    padding: 6px 10px;
+  }
+  .back:hover { background: rgb(255 255 255 / 28%); }
+  .back[hidden] { display: none; }
   .close {
     background: transparent;
     border: 0;
