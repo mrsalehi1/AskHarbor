@@ -106,7 +106,11 @@ export class AskHarborWidget {
     this.conversation.scrollTop = this.conversation.scrollHeight;
   }
 
-  private showOptions(options: ChatOption[]): void {
+  private showOptions(
+    options: ChatOption[],
+    onSelect: (option: ChatOption, group: HTMLElement) => void = (option, group) =>
+      void this.selectOption(option, group),
+  ): void {
     if (!this.conversation || options.length === 0) return;
     const group = document.createElement("div");
     group.className = "options";
@@ -117,7 +121,7 @@ export class AskHarborWidget {
       button.className = "option";
       button.type = "button";
       button.textContent = option.label;
-      button.addEventListener("click", () => void this.selectOption(option, group));
+      button.addEventListener("click", () => onSelect(option, group));
       group.append(button);
     }
     this.conversation.append(group);
@@ -132,8 +136,17 @@ export class AskHarborWidget {
 
     const status = document.createElement("p");
     status.className = "status";
-    status.textContent = "Finding an answer…";
     this.conversation?.append(status);
+    await this.requestAnswer(option, status);
+  }
+
+  /**
+   * Requests the answer for an option. The same status element is reused for
+   * every attempt, so a retry never duplicates the question or stacks errors.
+   */
+  private async requestAnswer(option: ChatOption, status: HTMLElement): Promise<void> {
+    status.textContent = "Finding an answer…";
+    if (this.conversation) this.conversation.scrollTop = this.conversation.scrollHeight;
 
     try {
       const response = await fetch(
@@ -152,7 +165,10 @@ export class AskHarborWidget {
     } catch (error) {
       console.error("AskHarbor message failed:", error);
       status.textContent = "Sorry, the answer could not be loaded. Please try again.";
-      this.showOptions([option]);
+      this.showOptions([option], (retryOption, retryGroup) => {
+        retryGroup.remove();
+        void this.requestAnswer(retryOption, status);
+      });
     }
   }
 }
