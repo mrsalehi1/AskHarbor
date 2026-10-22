@@ -20,7 +20,7 @@ For a widget change, open the local example page and check:
 4. Stop the API, try an option, restart it and retry.
 5. Check Escape and where focus goes after closing.
 
-The retry issue is still open. Record the behavior you observe rather than treating the checklist as a claim that every flow already passes.
+Record the behavior you observe rather than treating the checklist as a claim that every flow already passes. The README quick start describes the expected retry behavior.
 
 ## Pull requests
 

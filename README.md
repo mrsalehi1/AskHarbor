@@ -12,6 +12,50 @@ Bot content currently lives in `server/app/repository.py`. Content files, a visu
 
 The active product plan is guided FAQ support using public reference content. Earlier AI and RAG ideas are outside this plan. The current code does not call a model or retrieve documents.
 
+## Quick start
+
+Open three terminals from the repository root. The first runs the API, the second builds the widget, and the third serves the example page.
+
+Terminal 1, the API:
+
+```bash
+cd server
+python -m venv .venv && source .venv/bin/activate   # Windows: .\.venv\Scripts\Activate.ps1
+cp .env.example .env
+python -m pip install -e ".[dev]"
+python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --no-access-log
+```
+
+Terminal 2, the widget:
+
+```bash
+cd widget
+npm ci
+npm run build
+```
+
+Terminal 3, the example page:
+
+```bash
+python -m http.server 4173 --bind 127.0.0.1 --directory widget/dist
+```
+
+Open [http://127.0.0.1:4173/](http://127.0.0.1:4173/). The page is `examples/demo.html` served next to the built widget. It talks to the demo bot at `http://127.0.0.1:8000`, whose fictional questions and answers live in `server/app/repository.py`. Click the chat button, pick a question, and follow the answer to its follow up choices.
+
+On Debian or Ubuntu, `python -m venv` needs the `python3-venv` package. If the chat button does not appear, confirm the API is running and that `server/.env` allows `http://127.0.0.1:4173`.
+
+### Try the retry flow
+
+This checks the behavior fixed for [issue 1](https://github.com/mrsalehi1/AskHarbor/issues/1).
+
+1. Open the chat and stop the API in terminal 1 with `Ctrl+C`.
+2. Choose a question. One error line appears with the same question offered again as a retry.
+3. Choose it again while the API is still down. The error line and retry option stay single. Nothing stacks.
+4. Restart the API and choose the question once more.
+5. The error disappears. The question, answer and follow up choices each appear once.
+
+The detailed sections below cover each step and the embed snippet for other sites.
+
 ## Requirements
 
 1. Python 3.11 or newer.
