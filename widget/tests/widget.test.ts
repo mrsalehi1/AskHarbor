@@ -163,3 +163,153 @@ describe("AskHarborWidget retry behavior", () => {
     expect(count(root, ".option", "What does it cost?")).toBe(0);
   });
 });
+
+describe("AskHarborWidget back to menu", () => {
+  afterEach(() => {
+    document.body.replaceChildren();
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  const menuConfig = {
+    ...config,
+    options: [
+      { id: "pricing", label: "What does it cost?" },
+      { id: "contact", label: "How do I reach you?" },
+    ],
+  };
+  const finalAnswer = { ok: true, json: async () => ({ answer: "It is free.", options: [] }) };
+  const branchingAnswer = {
+    ok: true,
+    json: async () => ({
+      answer: "Yes, there is a trial.",
+      options: [{ id: "trial-length", label: "How long is the trial?" }],
+    }),
+  };
+  const failure = { ok: false, status: 503 };
+
+  async function startWidget(responses: unknown[]) {
+    const fetchMock = vi.fn().mockResolvedValueOnce({ ok: true, json: async () => menuConfig });
+    for (const response of responses) fetchMock.mockResolvedValueOnce(response);
+    vi.stubGlobal("fetch", fetchMock);
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const widget = new AskHarborWidget({ apiUrl: "https://api.example.com", botId: "demo" });
+    await widget.init();
+    const root = document.querySelector<HTMLElement>("[data-askharbor='widget']")!.shadowRoot!;
+    root.querySelector<HTMLButtonElement>(".launcher")!.click();
+    return { fetchMock, root, back: root.querySelector<HTMLButtonElement>(".back")! };
+  }
+
+  function texts(root: ShadowRoot, selector: string): string[] {
+    return Array.from(root.querySelectorAll(selector)).map((el) => el.textContent ?? "");
+  }
+
+  function clickOption(root: ShadowRoot, label: string): void {
+    const button = Array.from(root.querySelectorAll<HTMLButtonElement>(".option")).find(
+      (candidate) => candidate.textContent === label,
+    );
+    expect(button, `option "${label}" should be visible`).toBeDefined();
+    button!.click();
+  }
+
+  function expectMenu(root: ShadowRoot, back: HTMLButtonElement): void {
+    expect(texts(root, ".message")).toEqual(["How can we help?"]);
+    expect(texts(root, ".option")).toEqual(["What does it cost?", "How do I reach you?"]);
+    expect(texts(root, ".status")).toEqual([]);
+    expect(back.hidden).toBe(true);
+  }
+
+  it("is a keyboard reachable button that is hidden while the menu is showing", async () => {
+    const { root, back } = await startWidget([finalAnswer]);
+
+    expect(back.tagName).toBe("BUTTON");
+    expect(back.type).toBe("button");
+    expect(back.disabled).toBe(false);
+    expect(back.tabIndex).toBe(0);
+    expect(back.getAttribute("aria-label")).toBe("Back to menu");
+    expectMenu(root, back);
+
+    clickOption(root, "What does it cost?");
+    expect(back.hidden).toBe(false);
+  });
+
+  it("returns to the opening questions after a final answer and focuses the first one", async () => {
+    const { fetchMock, root, back } = await startWidget([finalAnswer, finalAnswer]);
+
+    clickOption(root, "What does it cost?");
+    await vi.waitFor(() => expect(texts(root, ".message.bot")).toContain("It is free."));
+    expect(texts(root, ".option")).toEqual([]);
+
+    back.focus();
+    back.click();
+
+    expectMenu(root, back);
+    expect(root.activeElement?.textContent).toBe("What does it cost?");
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+
+    clickOption(root, "How do I reach you?");
+    await vi.waitFor(() => expect(texts(root, ".message.bot")).toContain("It is free."));
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+
+  it("returns to the menu in the middle of a conversation", async () => {
+    const { root, back } = await startWidget([branchingAnswer]);
+
+    clickOption(root, "What does it cost?");
+    await vi.waitFor(() => expect(texts(root, ".option")).toEqual(["How long is the trial?"]));
+
+    back.click();
+
+    expectMenu(root, back);
+  });
+
+  it("returns to the menu after a failed request and drops the error and retry", async () => {
+    const { root, back } = await startWidget([failure]);
+
+    clickOption(root, "What does it cost?");
+    await vi.waitFor(() => expect(texts(root, ".status")[0]).toContain("Sorry"));
+    expect(texts(root, ".option")).toEqual(["What does it cost?"]);
+
+    back.click();
+
+    expectMenu(root, back);
+  });
+
+  it("ignores a late reply from a flow that was abandoned while pending", async () => {
+    let resolveReply: (value: unknown) => void = () => undefined;
+    const pending = new Promise((resolve) => {
+      resolveReply = resolve;
+    });
+    const { fetchMock, root, back } = await startWidget([pending]);
+
+    clickOption(root, "What does it cost?");
+    expect(texts(root, ".status")).toEqual(["Finding an answer…"]);
+    expect(back.hidden).toBe(false);
+
+    back.click();
+    expectMenu(root, back);
+
+    resolveReply(await Promise.resolve(branchingAnswer));
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    expectMenu(root, back);
+    expect(texts(root, ".message")).not.toContain("Yes, there is a trial.");
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("ignores a late failure from an abandoned flow", async () => {
+    let rejectReply: (reason: unknown) => void = () => undefined;
+    const pending = new Promise((_resolve, reject) => {
+      rejectReply = reject;
+    });
+    const { root, back } = await startWidget([pending]);
+
+    clickOption(root, "What does it cost?");
+    back.click();
+    rejectReply(new TypeError("Failed to fetch"));
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    expectMenu(root, back);
+    expect(console.error).not.toHaveBeenCalled();
+  });
+});

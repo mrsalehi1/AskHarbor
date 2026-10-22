@@ -10,6 +10,9 @@ export class AskHarborWidget {
   private panel?: HTMLElement;
   private conversation?: HTMLElement;
   private launcher?: HTMLButtonElement;
+  private backButton?: HTMLButtonElement;
+  /** Increments whenever the visitor returns to the menu, so late replies are ignored. */
+  private flow = 0;
 
   constructor(options: WidgetOptions) {
     this.apiUrl = options.apiUrl.replace(/\/$/, "");
@@ -63,6 +66,13 @@ export class AskHarborWidget {
 
     const header = document.createElement("header");
     header.className = "header";
+    this.backButton = document.createElement("button");
+    this.backButton.className = "back";
+    this.backButton.type = "button";
+    this.backButton.hidden = true;
+    this.backButton.setAttribute("aria-label", "Back to menu");
+    this.backButton.textContent = "\u2190 Menu";
+    this.backButton.addEventListener("click", () => this.showMenu(true));
     const title = document.createElement("span");
     title.className = "title";
     title.textContent = this.config.name;
@@ -72,13 +82,12 @@ export class AskHarborWidget {
     close.setAttribute("aria-label", "Close chat");
     close.textContent = "×";
     close.addEventListener("click", () => this.toggle(false));
-    header.append(title, close);
+    header.append(this.backButton, title, close);
 
     this.conversation = document.createElement("div");
     this.conversation.className = "conversation";
     this.conversation.setAttribute("aria-live", "polite");
-    this.addMessage(this.config.greeting, "bot");
-    this.showOptions(this.config.options);
+    this.showMenu(false);
 
     this.panel.append(header, this.conversation);
     this.shadow.append(style, this.panel, this.launcher);
@@ -95,6 +104,21 @@ export class AskHarborWidget {
     } else {
       this.launcher.focus();
     }
+  }
+
+  /**
+   * Replaces the transcript with the greeting and opening questions from the
+   * loaded configuration. Any reply still in flight belongs to an old flow and
+   * is dropped when it arrives.
+   */
+  private showMenu(focusFirstOption: boolean): void {
+    if (!this.config || !this.conversation || !this.backButton) return;
+    this.flow += 1;
+    this.conversation.replaceChildren();
+    this.backButton.hidden = true;
+    this.addMessage(this.config.greeting, "bot");
+    this.showOptions(this.config.options);
+    if (focusFirstOption) this.conversation.querySelector<HTMLButtonElement>(".option")?.focus();
   }
 
   private addMessage(text: string, sender: "bot" | "user"): void {
@@ -133,6 +157,7 @@ export class AskHarborWidget {
     });
     this.addMessage(option.label, "user");
     group.remove();
+    if (this.backButton) this.backButton.hidden = false;
 
     const status = document.createElement("p");
     status.className = "status";
@@ -145,6 +170,7 @@ export class AskHarborWidget {
    * every attempt, so a retry never duplicates the question or stacks errors.
    */
   private async requestAnswer(option: ChatOption, status: HTMLElement): Promise<void> {
+    const flow = this.flow;
     status.textContent = "Finding an answer…";
     if (this.conversation) this.conversation.scrollTop = this.conversation.scrollHeight;
 
@@ -159,10 +185,12 @@ export class AskHarborWidget {
       );
       if (!response.ok) throw new Error(`Message request failed (${response.status})`);
       const result = (await response.json()) as MessageResponse;
+      if (flow !== this.flow) return;
       status.remove();
       this.addMessage(result.answer, "bot");
       this.showOptions(result.options);
     } catch (error) {
+      if (flow !== this.flow) return;
       console.error("AskHarbor message failed:", error);
       status.textContent = "Sorry, the answer could not be loaded. Please try again.";
       this.showOptions([option], (retryOption, retryGroup) => {
