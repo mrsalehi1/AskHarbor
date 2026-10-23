@@ -178,6 +178,8 @@ The version shown at `/docs` and in `/openapi.json` is read from the installed p
 
 `POST /messages` allows **30 requests per client address per 60 second window** by default. Answers are predefined, and a visitor following a guided conversation sends one request per click, so an ordinary session stays far below this.
 
+**Where the limit is enforced:** inside the API process itself, on `POST /api/v1/bots/{bot_id}/messages` only. There is no proxy involved; the demo setup in this repository serves the API directly, and the limiter is the only throttle. `GET /health` and `GET /api/v1/bots/{bot_id}` are never limited, so monitoring and widget start-up keep working while a client is throttled.
+
 | Variable | Default | Meaning |
 | :--- | :--- | :--- |
 | `ASKHARBOR_MESSAGE_RATE_LIMIT` | `30` | Requests allowed per client within one window. `0` disables the limit. Negative values are rejected at startup. |
@@ -190,7 +192,17 @@ ASKHARBOR_MESSAGE_RATE_LIMIT=10
 ASKHARBOR_MESSAGE_RATE_WINDOW_SECONDS=30
 ```
 
-Requests over the limit get `429 Too Many Requests` with a `Retry-After` header. The widget treats a `429` like any other failed request: it shows "Sorry, the answer could not be loaded. Please try again." with the same question offered as a retry, and the visitor can also use the menu button to start over. The widget does not read `Retry-After` or wait automatically, so a visitor who retries immediately will see the same message until the window resets.
+Requests over the limit get `429 Too Many Requests`. The response carries a `Retry-After` header with the whole number of seconds (at least 1) until that client's window resets, and the body repeats it:
+
+```http
+HTTP/1.1 429 Too Many Requests
+Retry-After: 42
+Content-Type: application/json
+
+{"detail": "Too many requests. Try again in 42 seconds."}
+```
+
+The window is fixed, counted from a client's first request: rejected requests do not extend it, so waiting out the `Retry-After` interval always restores the full budget. The widget treats a `429` like any other failed request: it shows "Sorry, the answer could not be loaded. Please try again." with the same question offered as a retry, and the visitor can also use the menu button to start over. The widget does not read `Retry-After` or wait automatically, so a visitor who retries immediately will see the same message until the window resets.
 
 What the limiter stores: a fixed window counter per client address, in process memory, capped at 10000 entries. Expired windows are evicted first, then the oldest live one. Nothing is written to disk, no visitor IDs, cookies or profiles are created, and the counters disappear when the process stops. The client address is taken from the TCP connection; `X-Forwarded-For` is not read, so behind a reverse proxy all visitors share the proxy's address and one limit.
 

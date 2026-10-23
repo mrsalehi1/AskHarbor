@@ -60,7 +60,7 @@ Estimated effort: 4 to 6 hours.
 1. Package the API and static widget for a documented AWS demonstration deployment.
 2. Keep infrastructure configuration in the repository and use placeholders for account specific settings.
 3. Check the health endpoint during deployment and document rollback and cleanup.
-4. Add configurable request limits, or enforce them at the deployment proxy, as described in [issue 6](https://github.com/mrsalehi1/AskHarbor/issues/6). **Partly done** on the `fix/server-config-validation` branch: the API enforces a configurable per client limit on the messages endpoint (default 30 per 60 seconds, `429` with `Retry-After`, in memory and bounded, no visitor identifiers) with tests for the limit and recovery, and the README documents the settings, the widget's behavior and the multi worker caveat. Proxy level enforcement and the deployment documentation that identifies where limits apply remain for this stage.
+4. Add configurable request limits, or enforce them at the deployment proxy, as described in [issue 6](https://github.com/mrsalehi1/AskHarbor/issues/6). **Partly done** on the `fix/server-config-validation` branch: the API enforces a configurable per client limit on the messages endpoint (default 30 per 60 seconds, `429` with `Retry-After`, in memory and bounded, no visitor identifiers) with tests for the limit and recovery, and the README documents the settings, the widget's behavior and the multi worker caveat. The README now identifies where the limit is enforced (in the API process) and when to move it to a proxy. Still pending for this stage: the actual proxy configuration for a multi worker deployment, as part of the packaged demonstration deployment.
 5. Use the fictional bot for deployment checks and document the host's request logging settings.
 
 Done when a fresh deployment serves the widget and demo API, health checks succeed, and rollback and cleanup have been rehearsed. Cloud checks require a separately configured account; local development remains available without one.
@@ -69,7 +69,7 @@ Done when a fresh deployment serves the widget and demo API, health checks succe
 
 The open work above is estimated at 26 to 38 hours, including implementation, tests and documentation. These are planning estimates based on the current prototype. Update them as work is completed or a task changes.
 
-Stage 1 is complete on the `fix/server-config-validation` branch pending merge: issues 1 to 5 are fixed with regression tests. The API side of issue 6 (stage 5, item 4) is done on the same branch; proxy enforcement and deployment documentation remain. Stages 2 through 5 remain planned. Existing issue fixes are part of stage 1 and stage 5, rather than additional work counted twice.
+Stage 1 is complete on the `fix/server-config-validation` branch pending merge: issues 1 to 5 are fixed with regression tests. The API side of issue 6 (stage 5, item 4) is done and documented on the same branch; the proxy configuration for multi worker deployments is still pending with the rest of stage 5. Stages 2 through 5 remain planned. Existing issue fixes are part of stage 1 and stage 5, rather than additional work counted twice.
 
 ## Data and product boundaries
 
