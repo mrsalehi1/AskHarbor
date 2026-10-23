@@ -22,13 +22,13 @@ Done when valid conversations still work, invalid content produces useful errors
 
 Estimated effort: 6 to 8 hours.
 
-1. Define a versioned JSON format for branding, opening questions, answer nodes and follow up choices.
-2. Load a configured content file instead of editing Python to change answers.
-3. Validate duplicate IDs, missing references, empty labels, invalid colors and malformed files.
-4. Make import and reload atomic so rejected content leaves the last valid definition available.
-5. Keep the fictional demo as an example and document how to create a second bot.
+1. Define a versioned JSON format for branding, opening questions, answer nodes and follow up choices. **Done** on `feat/content-files`: `format_version` 1, one bot per file, identity from `config.id`, opening labels taken from the answers, API responses unchanged.
+2. Load a configured content file instead of editing Python to change answers. **Done.** `ASKHARBOR_CONTENT_DIR` selects the directory, defaulting to `server/content/`.
+3. Validate duplicate IDs, missing references, empty labels, invalid colors and malformed files. **Done.** Also checks the format version, required fields, unknown keys, ID and color patterns and length caps, and reports every problem with its path. Invalid content stops startup with the full list.
+4. Make import and reload atomic so rejected content leaves the last valid definition available. **Done** for reload: `SIGHUP` reloads every file and swaps the whole set only when all of them validate; otherwise the loaded content stays. Import belongs to the editor in stage 3.
+5. Keep the fictional demo as an example and document how to create a second bot. **Done.** The demo moved to `server/content/demo.json`, a fictional Harbor Library bot was added, and shared validation fixtures in `fixtures/content/` are ready for the editor.
 
-Done when two independent bots can be configured from files, valid content survives reload, and rejected changes leave existing content intact.
+Done when two independent bots can be configured from files, valid content survives reload, and rejected changes leave existing content intact. Remaining limitations: reload is per process and not available on Windows, and there is no file watcher. See "Bot content" in the README.
 
 ## 3. Add a local content editor
 
@@ -69,7 +69,7 @@ Done when a fresh deployment serves the widget and demo API, health checks succe
 
 The open work above is estimated at 26 to 38 hours, including implementation, tests and documentation. These are planning estimates based on the current prototype. Update them as work is completed or a task changes.
 
-Stage 1 is complete and merged to `dev`: issues 1 to 5 are fixed with regression tests. The API side of issue 6 (stage 5, item 4) is also on `dev`; proxy enforcement and deployment documentation are still pending. Stages 2, 3 and 4 have not started and the rest of stage 5 is still pending; their estimates are unchanged. Existing issue fixes are part of stage 1 and stage 5, rather than additional work counted twice.
+Stage 1 is complete and merged to `dev`: issues 1 to 5 are fixed with regression tests. The API side of issue 6 (stage 5, item 4) is also on `dev`; proxy enforcement and deployment documentation are still pending. Stage 2 is implemented on the `feat/content-files` branch and awaits review. Stages 3 and 4 have not started and the rest of stage 5 is still pending; their estimates are unchanged. Existing issue fixes are part of stage 1 and stage 5, rather than additional work counted twice.
 
 ## Data and product boundaries
 

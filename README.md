@@ -6,9 +6,9 @@ The browser widget uses TypeScript and Shadow DOM. A Python FastAPI service supp
 
 ## Current status
 
-This is an early prototype with one fictional demo bot. It supports embedding, configurable branding, guided answer flows, a single retry when a request fails, a back to menu button, validated origin and content settings, and a per client request limit on the messages endpoint. Automated tests cover the API, the configuration rules and the widget flows.
+This is an early prototype with two fictional bots. It supports embedding, configurable branding, guided answer flows, a single retry when a request fails, a back to menu button, validated origin and content settings, and a per client request limit on the messages endpoint. Automated tests cover the API, the configuration rules, the content format and the widget flows.
 
-Bot content currently lives in `server/app/repository.py`. Content files, a visual editor and deployment automation are planned work. The [roadmap](ROADMAP.md) separates that work from the features available today.
+Bot content lives in JSON files, one per bot, in `server/content/`. The server validates every file at startup and can reload them without a restart. See [Bot content](#bot-content). A visual editor and deployment automation are planned work. The [roadmap](ROADMAP.md) separates that work from the features available today.
 
 The active product plan is guided FAQ support using public reference content. Earlier AI and RAG ideas are outside this plan. The current code does not call a model or retrieve documents.
 
@@ -51,7 +51,7 @@ Terminal 3, the example page:
 python3 -m http.server 4173 --bind 127.0.0.1 --directory widget/dist
 ```
 
-Open [http://127.0.0.1:4173/](http://127.0.0.1:4173/). The page is `examples/demo.html` served next to the built widget. It talks to the demo bot at `http://127.0.0.1:8000`, whose fictional questions and answers live in `server/app/repository.py`. Click the chat button, pick a question, and follow the answer to its follow up choices.
+Open [http://127.0.0.1:4173/](http://127.0.0.1:4173/). The page is `examples/demo.html` served next to the built widget. It talks to the demo bot at `http://127.0.0.1:8000`, whose fictional questions and answers live in `server/content/demo.json`. Click the chat button, pick a question, and follow the answer to its follow up choices.
 
 If the chat button does not appear, confirm the API is running and that `server/.env` allows `http://127.0.0.1:4173`.
 
@@ -72,6 +72,16 @@ This checks the behavior fixed for [issue 1](https://github.com/mrsalehi1/AskHar
 3. The greeting and the original opening questions return without a page reload.
 4. Stop the API, choose a question, and use the menu button while the error is showing. The error and retry option are cleared.
 5. Restart the API, choose a question, and use the menu button before the answer arrives. The late answer is ignored and the menu stays in place.
+
+### Try the second bot and a content reload
+
+1. With the API running, open [http://127.0.0.1:8000/api/v1/bots/library](http://127.0.0.1:8000/api/v1/bots/library). This is the fictional Harbor Library bot from `server/content/library.json`.
+2. Edit the greeting in that file and save it.
+3. In a fourth terminal, send the reload signal: `kill -HUP $(pgrep -f "uvicorn app.main:app")`. Terminal 1 prints `Content reloaded from ... : demo, library`.
+4. Refresh the bot address from step 1. The new greeting is there.
+5. Break the file, for example by deleting a closing bracket, and send the signal again. Terminal 1 prints the problem with the file name, path and reason, and the previous content keeps being served.
+
+To show the library bot on the example page, change `data-bot-id="demo"` to `data-bot-id="library"` in `examples/demo.html`, run `npm run build` again and reload the page.
 
 The detailed sections below cover each step and the embed snippet for other sites.
 
@@ -172,7 +182,88 @@ The messages endpoint is rate limited per client address. Over the limit it retu
 
 Unknown bots return `404`. Unknown option IDs return `400`. Invalid request fields return `422`.
 
-The version shown at `/docs` and in `/openapi.json` is read from the installed package metadata, falling back to `server/pyproject.toml` for a source checkout. To release a new API version, change the `version` field in `server/pyproject.toml` only. Bot content is checked when the server starts: a follow up or opening option that points at an answer ID that does not exist stops startup with an error naming the bot, the answer and the missing ID, so a typo in the content cannot silently remove a button.
+The version shown at `/docs` and in `/openapi.json` is read from the installed package metadata, falling back to `server/pyproject.toml` for a source checkout. To release a new API version, change the `version` field in `server/pyproject.toml` only. Bot content is validated when the server starts and on every reload, see [Bot content](#bot-content). If content with a missing follow up reference ever reaches the messages endpoint anyway, it returns a 500 naming the bot, the answer and the missing ID instead of dropping the button.
+
+## Bot content
+
+Each bot is one JSON file in the content directory. The default directory is `server/content/`, which ships with the fictional `demo` and `library` bots. Set `ASKHARBOR_CONTENT_DIR` in the environment or in `server/.env` to use another directory. The variable must not be blank; remove it to get the default back.
+
+**Identity.** The bot ID is `config.id` inside the file, not the file name. It appears in the widget's `data-bot-id` attribute and in the API path. Two files with the same `config.id` are rejected together.
+
+**Format.** This is the shape of a file, trimmed from `server/content/demo.json`:
+
+```json
+{
+  "format_version": 1,
+  "config": {
+    "id": "demo",
+    "name": "AskHarbor",
+    "greeting": "Hi! What can I help you with?",
+    "launcher_label": "Open support chat",
+    "primary_color": "#155eef",
+    "opening_option_ids": ["getting-started", "contact"]
+  },
+  "answers": [
+    {
+      "id": "getting-started",
+      "label": "How do I get started?",
+      "answer": "Add the AskHarbor script before your closing body tag.",
+      "next_option_ids": ["contact"]
+    },
+    {
+      "id": "contact",
+      "label": "How can I contact support?",
+      "answer": "Email your support team at support@example.com."
+    }
+  ]
+}
+```
+
+| Field | Meaning |
+| :--- | :--- |
+| `format_version` | Always `1`. Other values are rejected so an older server never misreads a newer file. |
+| `config.id` | Bot ID. Letters, digits, `-` and `_`, starting with a letter or digit, at most 100 characters. |
+| `config.name`, `config.greeting`, `config.launcher_label` | Panel title, first message, and the launcher button's accessible label. Plain text, not blank. |
+| `config.primary_color` | Hex color, `#rgb` or `#rrggbb`. |
+| `config.opening_option_ids` | The questions shown with the greeting, in order. At least one. Each must be an answer `id`. |
+| `answers[].id` | Option ID, same rules as the bot ID. Unique within the file. |
+| `answers[].label` | The button text for this question, also used when it is an opening question. At most 200 characters. |
+| `answers[].answer` | The reply, plain text up to 4000 characters. Line breaks are kept; links and markup are not interpreted. |
+| `answers[].next_option_ids` | Follow up questions offered after this answer, in order. Optional. Each must be an answer `id`. |
+
+Opening labels are taken from the matching answer, so a question's text lives in one place. Unknown keys are rejected rather than ignored, so a misspelled key such as `next_options_ids` is reported instead of silently dropping the follow ups. The API responses are unchanged: `GET /api/v1/bots/{bot_id}` still returns `options` with `id` and `label`, built from `opening_option_ids`.
+
+**Validation.** Every file is checked for malformed JSON and UTF-8, the format version, required fields, blank text, the ID and color patterns, length caps, duplicate answer IDs, duplicate entries in an option list, and opening or follow up options with no matching answer. Each problem is reported with the file, a path such as `answers[1].next_option_ids[0]` and a short reason. All problems in all files are listed at once, not just the first.
+
+**Startup.** If any file is invalid, the server refuses to start and prints the full list:
+
+```text
+AskHarbor cannot start because the bot content in /path/to/content is invalid. Fix the files below or point ASKHARBOR_CONTENT_DIR at a valid directory.
+Bot content was rejected (1 file with problems):
+  /path/to/content/shop.json
+    config.primary_color: must be a hex color like #155eef or #fff
+    answers[0].next_option_ids[0]: follow up option 'pricng' has no matching answer
+```
+
+An empty directory or a directory that does not exist is also an error.
+
+**Reload without a restart.** Send `SIGHUP` to the uvicorn process. The server reads every file again and swaps the complete set in one step only if all of them validate. Otherwise it logs the problems in the same format and keeps serving the content that was already loaded, so a half finished edit never takes a bot offline.
+
+```bash
+kill -HUP $(pgrep -f "uvicorn app.main:app")
+```
+
+A successful reload logs `Content reloaded from <directory>: demo, library`. A rejected one logs `Content reload rejected, keeping the N bot(s) already loaded (...)` followed by the problems. There is no HTTP endpoint for reloading, by design: the API has no authentication, and a reload endpoint would let anyone on the network trigger file reads.
+
+**Adding a bot.** Copy `server/content/library.json`, change `config.id` and the content, keep it fictional or public, then restart or send the reload signal. The widget embed for the new bot uses its `config.id` in `data-bot-id`. The shared fixtures in `fixtures/content/` show valid and invalid examples with the problems each one should produce; the planned browser editor will use the same files so both sides agree on what is valid.
+
+**Limitations.**
+
+- The reload signal is meant for the single process command shown in the quick start. With `uvicorn --reload`, the supervisor process does not handle `SIGHUP` and exits, so send the signal only to the child worker, or restart. With `uvicorn --workers N`, each worker holds its own copy and uvicorn treats `SIGHUP` to the supervisor as a request to restart every worker; the new workers validate the content at startup and fail if it is invalid. In both cases `pgrep -f "uvicorn app.main:app"` returns more than one process, so pick the PID deliberately.
+- `SIGHUP` does not exist on Windows. The server logs a warning at startup and runs without the reload signal; restart it to pick up changes.
+- Answers are plain text. Links, markdown and HTML are shown literally.
+- Answers that no opening or follow up option can reach are allowed and not reported.
+- The content directory is read once per startup or reload. There is no file watcher.
 
 ## Request limits
 
@@ -240,7 +331,9 @@ GitHub Actions runs these checks on pushes and pull requests. Browser checks for
 | Location | Purpose |
 | :--- | :--- |
 | `widget/src/` | Browser widget and styles. |
-| `server/app/` | API, settings and demo answers. |
+| `server/app/` | API, settings, content loading and validation. |
+| `server/content/` | Bot content files, one JSON file per bot. |
+| `fixtures/content/` | Shared valid and invalid content cases used by the API tests and, later, the editor. |
 | `server/tests/` and `widget/tests/` | Automated tests. |
 | `examples/demo.html` | Local example host page. |
 | [ROADMAP.md](ROADMAP.md) | Planned work and completion criteria. |
