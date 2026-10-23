@@ -314,9 +314,55 @@ Without the variable those tests are skipped and the rest of the suite runs as b
 
 **Limitations.**
 
-- Accounts, login and the admin interface do not exist yet. The `users`, `sessions` and `website_members` tables are created empty for the next rounds, and the editor still works with files, not the database.
+- User management and the admin interface do not exist yet; see [Accounts and login](#accounts-and-login) for what works today. The editor still works with files, not the database.
 - Database mode queries PostgreSQL on each request (with a small per-revision cache for the built definition). That is fine at demo scale and unmeasured beyond it.
 - The import command and the editor do not talk to each other yet; moving an edited bot into the database is export, then import.
+
+## Accounts and login
+
+Accounts are available whenever `ASKHARBOR_DATABASE_URL` is set and the migrations have run, in either content mode. Without a database the account routes answer `503` with an explanation and the widget is unaffected. This round provides login, logout, sessions, the bootstrap admin and the forced password change. Creating users and websites, assigning access and the admin pages are the next round, so for now the only thing a signed in admin can do is list websites at `GET /api/v1/websites`.
+
+**Local development account.** On first start with an empty `users` table the server creates one admin:
+
+| Setting | Default | Variable |
+| :--- | :--- | :--- |
+| Username | `admin` | `ASKHARBOR_BOOTSTRAP_ADMIN_USERNAME` |
+| Password | `ChangeMeLocal123!` | `ASKHARBOR_BOOTSTRAP_ADMIN_PASSWORD` |
+
+The account is created with a forced password change: until it is changed, every route except login, logout, `GET /api/v1/auth/me` and the password change itself answers `403` with the code `password_change_required`. The bootstrap runs in every worker at startup inside a PostgreSQL advisory lock, so starting several workers together still creates exactly one admin. It only ever runs when the table is empty: a restart never recreates the account, resets a changed password or touches any other user. To start over locally, drop the `users` rows (or the database) deliberately.
+
+**Production.** Set `ASKHARBOR_ENV=production`. The server then refuses to start while the bootstrap password is the documented local one or shorter than 12 characters, or while `ASKHARBOR_COOKIE_SECURE` is false, and prints which variable to fix. Supply `ASKHARBOR_BOOTSTRAP_ADMIN_PASSWORD` (and optionally the username) once for the first start; it is ignored afterwards and can be removed. The admin still has to change that password at first login.
+
+**Endpoints.** All under `/api/v1`:
+
+| Endpoint | Behavior |
+| :--- | :--- |
+| `POST /auth/login` | JSON `{"username","password"}`. Sets the session cookie and returns `{"username","is_admin","must_change_password"}`. Wrong name and wrong password get the same `401`. |
+| `POST /auth/logout` | Revokes the session in the database and clears the cookie. `204`. |
+| `GET /auth/me` | The signed in user, including whether a password change is still required. |
+| `POST /auth/password` | JSON `{"current_password","new_password"}`. Checks the current password, applies the policy, clears the forced change and signs out the user's other sessions. |
+| `GET /websites` | Websites the user may edit: all for an admin, memberships for others. Requires the password change to be done. |
+
+**Passwords.** Hashed with Argon2id (the `argon2-cffi` defaults: 64 MiB, 3 passes) and never stored or logged in clear. New passwords must be 12 to 200 characters and differ from the current one; there are no composition rules. A login for an unknown username still runs a hash check against a dummy hash, so the response time does not reveal which accounts exist.
+
+**Sessions.** A login creates a database row and a cookie named `askharbor_session` holding a random 256-bit token; the row stores only the token's SHA-256. Sessions last 12 hours (`ASKHARBOR_SESSION_HOURS`), end on logout, and all other sessions of a user end when that user changes their password. Expired or revoked rows are cleaned up at startup. Because sessions live in the database, every worker sees the same logins and a logout is immediate everywhere.
+
+**Cookies and cross-site protection.** The cookie is `HttpOnly`, `SameSite=Lax`, `Path=/` and `Secure`. For plain `http://127.0.0.1` development set `ASKHARBOR_COOKIE_SECURE=false`; production refuses that. Three layers stop cross-site requests: the browser does not attach a `Lax` cookie to cross-site POSTs; the login, logout and password routes compare the `Origin` (or `Referer`) host with the `Host` header and answer `403` on a mismatch; and the login and password bodies must be JSON, which an HTML form cannot send. CORS applies only to `/health` and `/api/v1/bots/`, never to account routes, so an origin allowed for the widget cannot call them with the owner's cookie.
+
+**Login rate limit.** Failed attempts are counted per client address and per username, 5 per 5 minutes by default (`ASKHARBOR_LOGIN_RATE_LIMIT`, `ASKHARBOR_LOGIN_RATE_WINDOW_SECONDS`). While over the limit even a correct password gets `429` with `Retry-After`. Successful logins do not consume the budget. Like the message limit, these counters are per process: with several workers or behind a proxy they are weaker than they look, and the proxy should enforce a limit on the login route as well.
+
+**Try it locally.** With PostgreSQL migrated as described above and the API started with `ASKHARBOR_DATABASE_URL` set and `ASKHARBOR_COOKIE_SECURE=false`:
+
+```bash
+curl -c cookies.txt -H 'Content-Type: application/json' \
+  -d '{"username":"admin","password":"ChangeMeLocal123!"}' http://127.0.0.1:8000/api/v1/auth/login
+curl -b cookies.txt http://127.0.0.1:8000/api/v1/websites        # 403 password_change_required
+curl -b cookies.txt -H 'Content-Type: application/json' \
+  -d '{"current_password":"ChangeMeLocal123!","new_password":"pick-a-long-local-passphrase"}' \
+  http://127.0.0.1:8000/api/v1/auth/password
+curl -b cookies.txt http://127.0.0.1:8000/api/v1/websites        # 200, lists imported websites
+curl -b cookies.txt -X POST http://127.0.0.1:8000/api/v1/auth/logout
+```
 
 ## Content editor
 
@@ -406,7 +452,7 @@ GitHub Actions runs these checks on pushes and pull requests. Browser checks for
 | Location | Purpose |
 | :--- | :--- |
 | `widget/src/` | Browser widget, styles, shared content validation and the editor. |
-| `server/app/` | API, settings, content loading and validation, database models and storage. |
+| `server/app/` | API, settings, content loading and validation, database models, storage, accounts and login. |
 | `server/alembic/` | Database migrations, applied with `python -m alembic upgrade head`. |
 | `server/content/` | Bot content files, one JSON file per bot. |
 | `fixtures/content/` | Shared valid and invalid content cases used by the API tests and, later, the editor. |
