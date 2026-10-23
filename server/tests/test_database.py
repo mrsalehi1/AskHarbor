@@ -8,7 +8,6 @@ and every table is truncated between tests.
 
 import importlib
 import json
-import os
 
 import pytest
 from alembic.autogenerate import compare_metadata
@@ -110,11 +109,13 @@ def test_invalid_batch_imports_nothing(session, tmp_path) -> None:
     assert session.execute(select(BotContent)).first() is None
 
 
-def test_import_command_commits_in_one_transaction(session, engine, tmp_path, capsys) -> None:
+def test_import_command_commits_in_one_transaction(
+    session, engine, tmp_path, capsys, monkeypatch
+) -> None:
     """The CLI module wraps the import in a single transaction."""
     from app import import_content
 
-    os.environ["ASKHARBOR_DATABASE_URL"] = TEST_URL
+    monkeypatch.setenv("ASKHARBOR_DATABASE_URL", TEST_URL)
     config.get_settings.cache_clear()
     try:
         exit_code = import_content.main([str(CONTENT_DIR)])
@@ -129,11 +130,11 @@ def test_import_command_commits_in_one_transaction(session, engine, tmp_path, ca
     assert count == 2
 
 
-def test_import_command_reports_invalid_content(tmp_path, capsys) -> None:
+def test_import_command_reports_invalid_content(tmp_path, capsys, monkeypatch) -> None:
     from app import import_content
 
     (tmp_path / "bad.json").write_text('{"format_version": 7}')
-    os.environ["ASKHARBOR_DATABASE_URL"] = TEST_URL
+    monkeypatch.setenv("ASKHARBOR_DATABASE_URL", TEST_URL)
     config.get_settings.cache_clear()
     try:
         exit_code = import_content.main([str(tmp_path)])

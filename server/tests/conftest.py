@@ -38,8 +38,15 @@ def engine():
     engine = create_engine(TEST_URL)
     alembic_config = Config(str(SERVER_DIR / "alembic.ini"))
     alembic_config.set_main_option("script_location", str(ALEMBIC_DIR))
-    os.environ["ASKHARBOR_DATABASE_URL"] = TEST_URL
-    command.downgrade(alembic_config, "base")
+    # Hand the URL to alembic directly rather than through the environment, so the
+    # rest of the suite keeps running in file mode with accounts disabled.
+    alembic_config.set_main_option("sqlalchemy.url", TEST_URL)
+    # A disposable database: wipe whatever is there instead of trusting its
+    # alembic state, then build the schema the way a deployment does.
+    with engine.connect() as connection:
+        connection.execute(text("DROP SCHEMA public CASCADE"))
+        connection.execute(text("CREATE SCHEMA public"))
+        connection.commit()
     command.upgrade(alembic_config, "head")
     yield engine
     engine.dispose()

@@ -369,7 +369,13 @@ def test_website_list_shows_all_to_admins_and_only_memberships_to_others(
         db.flush()
         db.add(WebsiteMember(website_id=shop.id, user_id=editor.id))
 
-    assert [w["slug"] for w in client.get("/api/v1/websites").json()] == ["blog", "shop"]
+    # The sample bots are seeded into the empty database at startup; admins see everything.
+    assert [w["slug"] for w in client.get("/api/v1/websites").json()] == [
+        "blog",
+        "demo",
+        "library",
+        "shop",
+    ]
 
     client.post("/api/v1/auth/logout")
     assert login(client, username="editor", password="editor-passphrase-1").status_code == 200
