@@ -77,6 +77,20 @@ export interface EditorHandle {
   getDraft(): BotContentDocument;
   getProblems(): ContentProblem[];
   buildExport(): { filename: string; text: string };
+  /** Replace the draft wholesale, for example with the server's current version. */
+  setDocument(document: BotContentDocument): void;
+}
+
+export interface EditorOptions {
+  /** Start from this document instead of the built-in starter. */
+  initialDocument?: BotContentDocument;
+  /** Keep the bot ID fixed (it is the website's ID when editing on the server). */
+  lockId?: boolean;
+  /**
+   * Called by the "Save" button with the validated draft. Resolve to a status
+   * message to show, reject with an Error whose message is shown instead.
+   */
+  onSave?: (document: BotContentDocument) => Promise<string>;
 }
 
 type Children = (Node | string)[];
@@ -101,8 +115,8 @@ export function pathSelector(path: string): string {
 
 let fieldCounter = 0;
 
-export function mountEditor(root: HTMLElement): EditorHandle {
-  let draft = starterDraft();
+export function mountEditor(root: HTMLElement, options: EditorOptions = {}): EditorHandle {
+  let draft = options.initialDocument ? structuredClone(options.initialDocument) : starterDraft();
   let problems: ContentProblem[] = [];
   let previewWidget: AskHarborWidget | undefined;
 
@@ -111,7 +125,11 @@ export function mountEditor(root: HTMLElement): EditorHandle {
   const importStatus = el("div", { id: "import-status" });
   importStatus.setAttribute("role", "status");
   const exportButton = el("button", { type: "button", id: "export-button", textContent: "Export JSON" });
+  const saveButton = el("button", { type: "button", id: "save-button", textContent: "Save" });
+  const saveStatus = el("span", { id: "save-status" });
+  saveStatus.setAttribute("role", "status");
   const toolbar = el("section", { className: "toolbar" }, [
+    ...(options.onSave ? [saveButton, saveStatus] : []),
     el("label", { className: "import-label", htmlFor: "import-input", textContent: "Import JSON file" }),
     importInput,
     exportButton,
@@ -143,7 +161,7 @@ export function mountEditor(root: HTMLElement): EditorHandle {
     path: string,
     value: string,
     onInput: (value: string) => void,
-    options: { textarea?: boolean; rerenderOnChange?: boolean } = {},
+    options: { textarea?: boolean; rerenderOnChange?: boolean; readOnly?: boolean } = {},
   ): HTMLElement {
     fieldCounter += 1;
     const id = `field-${fieldCounter}`;
@@ -151,6 +169,10 @@ export function mountEditor(root: HTMLElement): EditorHandle {
       ? el("textarea", { id, value, rows: 3 })
       : el("input", { id, type: "text", value });
     input.dataset.path = path;
+    if (options.readOnly) {
+      input.readOnly = true;
+      input.title = "The bot ID is the website's ID and cannot change here.";
+    }
     if (options.rerenderOnChange) input.dataset.rerender = "true";
     input.addEventListener("input", () => {
       onInput(input.value);
@@ -240,7 +262,10 @@ export function mountEditor(root: HTMLElement): EditorHandle {
     const config = draft.config;
     const branding = el("fieldset", {}, [
       el("legend", { textContent: "Branding" }),
-      textField("Bot ID", "config.id", config.id, (v) => (config.id = v), { rerenderOnChange: true }),
+      textField("Bot ID", "config.id", config.id, (v) => (config.id = v), {
+        rerenderOnChange: true,
+        readOnly: options.lockId,
+      }),
       textField("Name", "config.name", config.name, (v) => (config.name = v)),
       textField("Greeting", "config.greeting", config.greeting, (v) => (config.greeting = v), { textarea: true }),
       textField("Launcher label", "config.launcher_label", config.launcher_label, (v) => (config.launcher_label = v)),
@@ -333,6 +358,8 @@ export function mountEditor(root: HTMLElement): EditorHandle {
   function updateExportButton(): void {
     exportButton.disabled = problems.length > 0;
     exportButton.title = problems.length > 0 ? "Fix the problems before exporting." : "";
+    saveButton.disabled = problems.length > 0;
+    saveButton.title = problems.length > 0 ? "Fix the problems before saving." : "";
   }
 
   function updatePreviewNote(): void {
@@ -441,6 +468,28 @@ export function mountEditor(root: HTMLElement): EditorHandle {
     importStatus.replaceChildren(el("p", { textContent: `Exported '${filename}'.` }));
   });
 
+  saveButton.addEventListener("click", () => {
+    if (!options.onSave || problems.length > 0) return;
+    saveButton.disabled = true;
+    saveStatus.textContent = "Saving…";
+    options
+      .onSave(draftForValidation())
+      .then((message) => {
+        saveStatus.textContent = message;
+      })
+      .catch((error: unknown) => {
+        saveStatus.textContent = error instanceof Error ? error.message : String(error);
+      })
+      .finally(() => {
+        saveButton.disabled = problems.length > 0;
+      });
+  });
+
+  function setDocument(document: BotContentDocument): void {
+    draft = structuredClone(document);
+    structuralRefresh();
+  }
+
   // --- first render -------------------------------------------------------------
   renderForms();
   lightRefresh();
@@ -450,5 +499,6 @@ export function mountEditor(root: HTMLElement): EditorHandle {
     getDraft: () => draft,
     getProblems: () => problems,
     buildExport,
+    setDocument,
   };
 }
