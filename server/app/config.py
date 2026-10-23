@@ -72,8 +72,16 @@ class Settings(BaseSettings):
     message_rate_window_seconds: int = Field(default=60, ge=1)
     # Directory of bot content files, one JSON file per bot.
     content_dir: Path = Field(default=DEFAULT_CONTENT_DIR)
-    # Where the public bots are served from: JSON files (default) or PostgreSQL.
-    content_source: Literal["files", "database"] = "files"
+    # Where the public bots are served from. "auto" (default) means PostgreSQL
+    # when ASKHARBOR_DATABASE_URL is set and the JSON content files otherwise.
+    content_source: Literal["auto", "files", "database"] = "auto"
+    # Public base URL of this API as browsers reach it, used in the embed snippet
+    # shown to site owners. Defaults to the URL of the request that asks.
+    public_url: str | None = None
+    # Load the fictional sample bots into an empty database at first start.
+    seed_sample_content: bool = True
+    # Built widget output served at /admin (admin panel, editor and askharbor.js).
+    admin_dist: Path = Field(default=Path(__file__).resolve().parents[2] / "widget" / "dist")
     # SQLAlchemy URL for PostgreSQL, e.g. postgresql+psycopg://user:pass@host/db.
     # Accounts and login are available whenever this is set, in either content mode.
     database_url: str | None = None
@@ -98,6 +106,12 @@ class Settings(BaseSettings):
         if self.content_source == "database" and not (self.database_url or "").strip():
             raise ValueError(_DATABASE_URL_REQUIRED_MESSAGE)
         return self
+
+    @property
+    def resolved_content_source(self) -> Literal["files", "database"]:
+        if self.content_source == "auto":
+            return "database" if self.accounts_enabled else "files"
+        return self.content_source
 
     @model_validator(mode="after")
     def production_refuses_development_defaults(self) -> "Settings":

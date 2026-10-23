@@ -20,11 +20,12 @@ from sqlalchemy import (
     CheckConstraint,
     DateTime,
     ForeignKey,
+    Index,
     Integer,
     String,
     func,
 )
-from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.dialects.postgresql import ARRAY, JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 from .content import ID_PATTERN
@@ -62,7 +63,9 @@ class User(Base):
     password_changed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
-    memberships: Mapped[list["WebsiteMember"]] = relationship(back_populates="user")
+    memberships: Mapped[list["WebsiteMember"]] = relationship(
+        back_populates="user", cascade="all, delete-orphan", passive_deletes=True
+    )
 
 
 class LoginSession(Base):
@@ -95,12 +98,25 @@ class Website(Base):
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     slug: Mapped[str] = mapped_column(String(MAX_SLUG_LENGTH), unique=True)
     name: Mapped[str] = mapped_column(String(MAX_WEBSITE_NAME_LENGTH))
+    # The site's own domain as shown in the panel, e.g. "www.example.com". Informational.
+    domain: Mapped[str | None] = mapped_column(String(253))
+    # Exact origins allowed to load this bot's widget. Empty means the global
+    # ASKHARBOR_ALLOWED_ORIGINS list applies.
+    allowed_origins: Mapped[list[str]] = mapped_column(
+        ARRAY(String(255)), default=list, server_default="{}"
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
 
-    members: Mapped[list["WebsiteMember"]] = relationship(back_populates="website")
-    bot_content: Mapped["BotContent | None"] = relationship(back_populates="website")
+    # Deleting a website takes its memberships and bot document with it; the
+    # database does the same through ON DELETE CASCADE.
+    members: Mapped[list["WebsiteMember"]] = relationship(
+        back_populates="website", cascade="all, delete-orphan", passive_deletes=True
+    )
+    bot_content: Mapped["BotContent | None"] = relationship(
+        back_populates="website", cascade="all, delete-orphan", passive_deletes=True
+    )
 
 
 class WebsiteMember(Base):
@@ -138,3 +154,35 @@ class BotContent(Base):
     )
 
     website: Mapped[Website] = relationship(back_populates="bot_content")
+
+
+class AuditEntry(Base):
+    """Who did what, when. Appended by the admin and website routes, never edited."""
+
+    __tablename__ = "audit_log"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    user_id: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("users.id", ondelete="SET NULL")
+    )
+    # Snapshot of the name, so the entry stays readable if the user is deleted.
+    username: Mapped[str | None] = mapped_column(String(MAX_USERNAME_LENGTH))
+    action: Mapped[str] = mapped_column(String(60))
+    target_type: Mapped[str | None] = mapped_column(String(30))
+    target_id: Mapped[str | None] = mapped_column(String(120))
+    website_slug: Mapped[str | None] = mapped_column(String(MAX_SLUG_LENGTH), index=True)
+    details: Mapped[dict | None] = mapped_column(JSONB)
+    client_address: Mapped[str | None] = mapped_column(String(64))
+
+    __table_args__ = (Index("audit_log_at_idx", "at"),)
+
+
+class LoginAttempt(Base):
+    """Fixed window failed-login counter shared by every worker through the database."""
+
+    __tablename__ = "login_attempts"
+
+    key: Mapped[str] = mapped_column(String(200), primary_key=True)
+    window_start: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    count: Mapped[int] = mapped_column(Integer)

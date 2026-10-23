@@ -7,6 +7,8 @@ from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request
 
+from .admin_routes import build_admin_router
+from .admin_static import build_static_router
 from .auth_routes import AuthService, build_router
 from .config import get_settings
 from .content import ContentLoadError, load_content_directory
@@ -15,6 +17,7 @@ from .models import BotConfig, ChatOption, MessageRequest, MessageResponse
 from .rate_limit import FixedWindowRateLimiter
 from .repository import BotRepository
 from .version import get_version
+from .website_routes import build_website_router
 
 logger = logging.getLogger("askharbor")
 
@@ -48,9 +51,9 @@ def _database_content_source():
 # In file mode this is the in-memory repository with SIGHUP reload. In database
 # mode it reads live, so edits are visible without any reload, every worker
 # sees the same content, and the endpoints below are identical in both modes.
+CONTENT_SOURCE = settings.resolved_content_source
 repository = (
-    _database_content_source() if settings.content_source == "database"
-    else _load_startup_content()
+    _database_content_source() if CONTENT_SOURCE == "database" else _load_startup_content()
 )
 
 
@@ -62,7 +65,7 @@ def reload_content() -> bool:
     Database mode reads live, so the signal only logs a note. Returns True when
     a swap happened.
     """
-    if settings.content_source == "database":
+    if CONTENT_SOURCE == "database":
         logger.info("Content reload signal ignored: database mode reads live.")
         return False
     try:
@@ -123,26 +126,40 @@ def _session_factory():
 
 auth_service = AuthService(settings, _session_factory())
 
+if auth_service.factory is not None:
+    from .storage import SiteOriginsLookup
+
+    site_origins = SiteOriginsLookup(auth_service.factory)
+    auth_service.site_origins_changed = site_origins.forget
+else:
+    site_origins = None
+    auth_service.site_origins_changed = lambda slug: None
+
 
 def prepare_accounts() -> None:
-    """Check the database and create the bootstrap admin once.
+    """Check the database, create the bootstrap admin and load the sample bots once.
 
     Runs at startup in every worker. Each worker checks that the migrations are
-    current, then runs the bootstrap inside a database lock so exactly one of
-    them creates the first admin and the rest see it and skip.
+    current, then takes a database lock so exactly one of them creates the
+    first admin and seeds the sample content while the rest see the rows and
+    skip. Nothing here ever touches existing accounts or websites.
     """
     if auth_service.factory is None:
         logger.info("Accounts disabled: ASKHARBOR_DATABASE_URL is not set.")
         return
     from .auth import bootstrap_admin, purge_expired_sessions
-    from .storage import assert_database_ready
+    from .storage import assert_database_ready, seed_sample_content
 
     assert_database_ready(auth_service.factory.kw["bind"], ALEMBIC_DIR)
     with auth_service.factory() as db, db.begin():
         bootstrap_admin(db, settings)
+        if settings.seed_sample_content:
+            seed_sample_content(db, settings.content_dir)
         purged = purge_expired_sessions(db)
     if purged:
         logger.info("Removed %d expired login session(s).", purged)
+    if hasattr(auth_service.login_limiter, "purge_expired"):
+        auth_service.login_limiter.purge_expired()
 
 
 @asynccontextmanager
@@ -168,8 +185,13 @@ message_limiter = FixedWindowRateLimiter(
 )
 # Cross-origin access is for the widget's public routes only; account routes
 # are same-origin by design.
-app.add_middleware(PublicCORSMiddleware, allow_origins=settings.cors_origins)
+app.add_middleware(
+    PublicCORSMiddleware, allow_origins=settings.cors_origins, site_origins=site_origins
+)
 app.include_router(build_router(auth_service))
+app.include_router(build_website_router(auth_service))
+app.include_router(build_admin_router(auth_service))
+app.include_router(build_static_router(settings.admin_dist))
 
 
 @app.get("/health")

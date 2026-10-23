@@ -9,6 +9,8 @@ the shared content rules before they are written, never on the way out.
 from __future__ import annotations
 
 import logging
+import re
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -23,6 +25,9 @@ from .content import (
 )
 from .models import BotDefinition
 from .orm import BotContent, Website
+
+ORIGIN_PATTERN = re.compile(r"^https?://[^/\s]+$")
+DOMAIN_PATTERN = re.compile(r"^[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?$")
 
 logger = logging.getLogger("askharbor")
 
@@ -205,3 +210,113 @@ def assert_database_ready(engine: Engine, alembic_dir: Path) -> None:
             f"AskHarbor cannot start: the database is at migration '{current}' but the "
             f"code expects '{head}'. Run 'python -m alembic upgrade head' from server/."
         )
+
+
+# --- websites and their settings -------------------------------------------------
+
+
+class InvalidSetting(ValueError):
+    pass
+
+
+def normalize_origins(values: list[str]) -> list[str]:
+    """Trim, drop trailing slashes, de-duplicate and insist on scheme://host[:port]."""
+    cleaned: list[str] = []
+    for raw in values:
+        origin = raw.strip().rstrip("/")
+        if not origin:
+            continue
+        if not ORIGIN_PATTERN.match(origin):
+            raise InvalidSetting(
+                f"'{raw.strip()}' is not an origin. Use the scheme and host only, "
+                "for example https://www.example.com or http://localhost:3000."
+            )
+        if origin not in cleaned:
+            cleaned.append(origin)
+    return cleaned
+
+
+def normalize_domain(value: str | None) -> str | None:
+    domain = (value or "").strip().lower()
+    if not domain:
+        return None
+    if len(domain) > 253 or not DOMAIN_PATTERN.match(domain):
+        raise InvalidSetting(
+            f"'{value}' is not a domain name. Use the host only, for example www.example.com."
+        )
+    return domain
+
+
+def get_website(session: Session, slug: str) -> Website | None:
+    return session.execute(select(Website).where(Website.slug == slug)).scalar_one_or_none()
+
+
+def starter_document(slug: str, name: str) -> dict[str, Any]:
+    """The first bot document of a new website, so its widget works immediately."""
+    return {
+        "format_version": 1,
+        "config": {
+            "id": slug,
+            "name": name,
+            "greeting": "Hi! Pick a question to see its answer.",
+            "launcher_label": f"Open {name} help",
+            "primary_color": "#155eef",
+            "opening_option_ids": ["example-question"],
+        },
+        "answers": [
+            {
+                "id": "example-question",
+                "label": "Where does this answer come from?",
+                "answer": "From the AskHarbor editor. Replace this text with your first answer.",
+            }
+        ],
+    }
+
+
+class SiteOriginsLookup:
+    """Per website allowed origins for the CORS middleware, with a short cache.
+
+    Every widget request would otherwise hit the database twice. Entries live
+    for ``ttl`` seconds; ``forget`` drops one after a settings change so the
+    worker that handled the change answers correctly at once (other workers
+    catch up within the ttl).
+    """
+
+    def __init__(self, factory: sessionmaker[Session], ttl: float = 2.0) -> None:
+        self._factory = factory
+        self._ttl = ttl
+        self._cache: dict[str, tuple[float, list[str]]] = {}
+
+    def __call__(self, slug: str) -> list[str]:
+        cached = self._cache.get(slug)
+        now = time.monotonic()
+        if cached is not None and cached[0] > now:
+            return cached[1]
+        with self._factory() as session:
+            origins = session.execute(
+                select(Website.allowed_origins).where(Website.slug == slug)
+            ).scalar_one_or_none()
+        result = list(origins or [])
+        self._cache[slug] = (now + self._ttl, result)
+        return result
+
+    def forget(self, slug: str) -> None:
+        self._cache.pop(slug, None)
+
+
+def seed_sample_content(session: Session, directory: Path) -> ImportReport | None:
+    """Load the sample bots once, when there are no websites at all.
+
+    Runs inside the caller's transaction (the bootstrap lock is already held)
+    so concurrent workers cannot both seed. Returns None when websites exist.
+    """
+    if session.execute(select(func.count()).select_from(Website)).scalar_one() > 0:
+        return None
+    report = import_documents(session, directory)
+    logger.warning(
+        "Sample bots loaded into the empty database from %s: %s. They are fictional "
+        "content for trying the application; delete them from the admin panel when done.",
+        directory,
+        ", ".join(report.imported),
+    )
+    return report

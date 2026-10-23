@@ -1,24 +1,25 @@
-"""Login, logout, current user and password change endpoints.
+"""Login, logout, current user and password change, plus the access dependencies
+every protected route uses.
 
 Cross-site request protection has three layers. The session cookie is
 SameSite=Lax, so browsers do not attach it to cross-site POSTs. State changing
 routes compare the Origin (or Referer) host with the Host header and reject
-mismatches. And the login and password bodies must be JSON, which an HTML form
-cannot produce. CORS never applies to these routes; it is scoped to the public
-bot endpoints in main.py.
+mismatches. And request bodies must be JSON, which an HTML form cannot produce.
+CORS never applies to these routes; it is scoped to the public bot endpoints.
 """
 
+from collections.abc import Callable
 from datetime import timedelta
-from typing import Annotated
 from urllib.parse import urlsplit
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from fastapi import APIRouter, HTTPException, Request, Response, status
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
-from . import auth
+from . import audit, auth
 from .config import Settings
+from .login_limit import DatabaseLoginLimiter
 from .orm import LoginSession, User, Website, WebsiteMember
 from .rate_limit import FixedWindowRateLimiter
 
@@ -36,6 +37,12 @@ _INVALID_CREDENTIALS = HTTPException(
     status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid username or password."
 )
 _NOT_SIGNED_IN = HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not signed in.")
+_ADMIN_REQUIRED = HTTPException(
+    status_code=status.HTTP_403_FORBIDDEN, detail="Admin access required."
+)
+WEBSITE_NOT_FOUND = HTTPException(
+    status_code=status.HTTP_404_NOT_FOUND, detail="Website not found."
+)
 
 
 class LoginRequest(BaseModel):
@@ -54,9 +61,12 @@ class CurrentUser(BaseModel):
     must_change_password: bool
 
 
-class WebsiteSummary(BaseModel):
-    slug: str
-    name: str
+def current_user_summary(user: User) -> CurrentUser:
+    return CurrentUser(
+        username=user.username,
+        is_admin=user.is_admin,
+        must_change_password=user.must_change_password,
+    )
 
 
 def enforce_same_origin(request: Request) -> None:
@@ -76,15 +86,28 @@ def enforce_same_origin(request: Request) -> None:
 
 
 class AuthService:
-    """Holds what the auth routes and dependencies need: settings, DB and the limiter."""
+    """Holds what the protected routes need: settings, the database and the limiter.
+
+    With a database the failed-login counters live in it and are shared by every
+    worker. Without one accounts are disabled and the in-memory limiter is only
+    kept so the attributes exist.
+    """
 
     def __init__(self, settings: Settings, factory: sessionmaker[Session] | None) -> None:
         self.settings = settings
         self.factory = factory
-        self.login_limiter = FixedWindowRateLimiter(
-            limit=settings.login_rate_limit,
-            window_seconds=settings.login_rate_window_seconds,
-        )
+        # Set by main.py to drop a website's cached origins after a settings change.
+        self.site_origins_changed: Callable[[str], None] = lambda slug: None
+        self.login_limiter: DatabaseLoginLimiter | FixedWindowRateLimiter
+        if factory is not None:
+            self.login_limiter = DatabaseLoginLimiter(
+                factory, settings.login_rate_limit, settings.login_rate_window_seconds
+            )
+        else:
+            self.login_limiter = FixedWindowRateLimiter(
+                limit=settings.login_rate_limit,
+                window_seconds=settings.login_rate_window_seconds,
+            )
 
     @property
     def enabled(self) -> bool:
@@ -115,8 +138,8 @@ class AuthService:
         """A signed in user whose password change, if required, is done.
 
         Every route except login, logout, "who am I" and the password change
-        itself must depend on this, so a bootstrap admin cannot do anything
-        with the documented password.
+        itself depends on this, so a bootstrap admin or a user whose password
+        was reset cannot do anything with a temporary password.
         """
         user, _ = self.current_user(request)
         if user.must_change_password:
@@ -128,6 +151,30 @@ class AuthService:
                 },
             )
         return user
+
+    def admin_user(self, request: Request) -> User:
+        user = self.active_user(request)
+        if not user.is_admin:
+            raise _ADMIN_REQUIRED
+        return user
+
+    @staticmethod
+    def load_website(db: Session, slug: str, user: User) -> Website:
+        """The website if ``user`` may edit it, otherwise 404.
+
+        Admins see every website. Everyone else only the ones they are a member
+        of, and a website they cannot access looks exactly like one that does
+        not exist.
+        """
+        statement = select(Website).where(Website.slug == slug)
+        if not user.is_admin:
+            statement = statement.join(
+                WebsiteMember, WebsiteMember.website_id == Website.id
+            ).where(WebsiteMember.user_id == user.id)
+        website = db.execute(statement).scalar_one_or_none()
+        if website is None:
+            raise WEBSITE_NOT_FOUND
+        return website
 
     # --- cookie helpers -------------------------------------------------------
 
@@ -152,11 +199,21 @@ class AuthService:
         )
 
 
+def verify_login(user: User | None, password_hash: str | None, password: str) -> bool:
+    """True only for an existing, active user with the right password.
+
+    The hash check always runs, against a dummy hash for unknown names, so the
+    response time does not reveal whether an account exists.
+    """
+    matches = auth.verify_password(password_hash, password)
+    return matches and user is not None and user.is_active
+
+
 def build_router(service: AuthService) -> APIRouter:
-    router = APIRouter(prefix="/api/v1", tags=["accounts"])
+    router = APIRouter(prefix="/api/v1/auth", tags=["accounts"])
     settings = service.settings
 
-    @router.post("/auth/login", response_model=CurrentUser)
+    @router.post("/login", response_model=CurrentUser)
     def login(payload: LoginRequest, request: Request, response: Response) -> CurrentUser:
         if not service.enabled:
             raise _ACCOUNTS_DISABLED
@@ -172,7 +229,7 @@ def build_router(service: AuthService) -> APIRouter:
                     headers={"Retry-After": str(retry_after)},
                 )
 
-        with service.session() as db, db.begin():
+        with service.session() as db:
             user = db.execute(
                 select(User).where(User.username == payload.username)
             ).scalar_one_or_none()
@@ -181,21 +238,28 @@ def build_router(service: AuthService) -> APIRouter:
                 # Only failures consume the budget, for the address and the name.
                 service.login_limiter.hit(client_key)
                 service.login_limiter.hit(user_key)
+                audit.record(
+                    db,
+                    "login_failed",
+                    user=None,
+                    request=request,
+                    target_type="user",
+                    target_id=payload.username[:120],
+                )
+                db.commit()  # the audit row must survive the 401 below
                 raise _INVALID_CREDENTIALS
             assert user is not None
             if auth.password_needs_rehash(user.password_hash):
                 user.password_hash = auth.hash_password(payload.password)
             token = auth.create_session(db, user, timedelta(hours=settings.session_hours))
-            summary = CurrentUser(
-                username=user.username,
-                is_admin=user.is_admin,
-                must_change_password=user.must_change_password,
-            )
+            audit.record(db, "login", user=user, request=request)
+            summary = current_user_summary(user)
+            db.commit()
         service.set_cookie(response, token)
         return summary
 
-    @router.post("/auth/logout", status_code=status.HTTP_204_NO_CONTENT)
-    def logout(request: Request, response: Response) -> Response:
+    @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
+    def logout(request: Request) -> Response:
         if not service.enabled:
             raise _ACCOUNTS_DISABLED
         enforce_same_origin(request)
@@ -205,22 +269,19 @@ def build_router(service: AuthService) -> APIRouter:
                 found = auth.find_session(db, token)
                 if found is not None:
                     auth.revoke_session(db, found[0])
+                    audit.record(db, "logout", user=found[1], request=request)
         response = Response(status_code=status.HTTP_204_NO_CONTENT)
         service.clear_cookie(response)
         return response
 
-    @router.get("/auth/me", response_model=CurrentUser)
+    @router.get("/me", response_model=CurrentUser)
     def me(request: Request) -> CurrentUser:
         if not service.enabled:
             raise _ACCOUNTS_DISABLED
         user, _ = service.current_user(request)
-        return CurrentUser(
-            username=user.username,
-            is_admin=user.is_admin,
-            must_change_password=user.must_change_password,
-        )
+        return current_user_summary(user)
 
-    @router.post("/auth/password", response_model=CurrentUser)
+    @router.post("/password", response_model=CurrentUser)
     def change_password(payload: PasswordChangeRequest, request: Request) -> CurrentUser:
         if not service.enabled:
             raise _ACCOUNTS_DISABLED
@@ -238,35 +299,8 @@ def build_router(service: AuthService) -> APIRouter:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST, detail=str(error)
                 ) from None
-            summary = CurrentUser(
-                username=user.username,
-                is_admin=user.is_admin,
-                must_change_password=user.must_change_password,
-            )
+            audit.record(db, "password_change", user=user, request=request)
+            summary = current_user_summary(user)
         return summary
 
-    @router.get("/websites", response_model=list[WebsiteSummary])
-    def list_websites(
-        user: Annotated[User, Depends(service.active_user)],
-    ) -> list[WebsiteSummary]:
-        """Websites the signed in user may edit: all of them for an admin."""
-        with service.session() as db:
-            statement = select(Website).order_by(Website.slug)
-            if not user.is_admin:
-                statement = statement.join(
-                    WebsiteMember, WebsiteMember.website_id == Website.id
-                ).where(WebsiteMember.user_id == user.id)
-            websites = db.execute(statement).scalars().all()
-        return [WebsiteSummary(slug=site.slug, name=site.name) for site in websites]
-
     return router
-
-
-def verify_login(user: User | None, password_hash: str | None, password: str) -> bool:
-    """True only for an existing, active user with the right password.
-
-    The hash check always runs, against a dummy hash for unknown names, so the
-    response time does not reveal whether an account exists.
-    """
-    matches = auth.verify_password(password_hash, password)
-    return matches and user is not None and user.is_active

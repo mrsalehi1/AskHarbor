@@ -13,7 +13,7 @@ def _database_url() -> str:
     # A fresh Settings instance, not the app's cached one: migrations are often
     # run with a different URL in the environment than the process started with,
     # for example by the test suite.
-    url = Settings().database_url
+    url = context.config.get_main_option("sqlalchemy.url") or Settings().database_url
     if not url:
         raise SystemExit(
             "ASKHARBOR_DATABASE_URL is not set. Migrations need a PostgreSQL URL; "
