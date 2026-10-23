@@ -1,7 +1,17 @@
 from functools import lru_cache
+from pathlib import Path
 
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# Bot content files ship next to the package so a fresh checkout starts without configuration.
+DEFAULT_CONTENT_DIR = Path(__file__).resolve().parents[1] / "content"
+
+_EMPTY_CONTENT_DIR_MESSAGE = (
+    "ASKHARBOR_CONTENT_DIR is set but empty. Set it to the directory holding the bot "
+    "content files, one JSON file per bot, or remove the variable from the environment and "
+    "from server/.env to use the default server/content directory."
+)
 
 _EMPTY_ORIGINS_MESSAGE = (
     "ASKHARBOR_ALLOWED_ORIGINS is set but contains no origins, so every browser "
@@ -32,6 +42,8 @@ class Settings(BaseSettings):
     # Requests per client allowed on POST /messages within one window. 0 disables the limit.
     message_rate_limit: int = Field(default=30, ge=0)
     message_rate_window_seconds: int = Field(default=60, ge=1)
+    # Directory of bot content files, one JSON file per bot.
+    content_dir: Path = Field(default=DEFAULT_CONTENT_DIR)
 
     model_config = SettingsConfigDict(env_prefix="ASKHARBOR_", env_file=".env")
 
@@ -40,6 +52,13 @@ class Settings(BaseSettings):
     def refuse_blank_origins(cls, value: str) -> str:
         if not _parse_origins(value):
             raise ValueError(_EMPTY_ORIGINS_MESSAGE)
+        return value
+
+    @field_validator("content_dir", mode="before")
+    @classmethod
+    def refuse_blank_content_dir(cls, value: object) -> object:
+        if isinstance(value, str) and not value.strip():
+            raise ValueError(_EMPTY_CONTENT_DIR_MESSAGE)
         return value
 
     @property

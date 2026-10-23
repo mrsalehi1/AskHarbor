@@ -1,19 +1,104 @@
+import asyncio
 import logging
+import signal
+from collections.abc import AsyncIterator, Callable
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 
 from .config import get_settings
+from .content import ContentLoadError, load_content_directory
 from .models import BotConfig, ChatOption, MessageRequest, MessageResponse
 from .rate_limit import FixedWindowRateLimiter
-from .repository import repository
+from .repository import BotRepository
 from .version import get_version
 
 logger = logging.getLogger("askharbor")
 
-app = FastAPI(title="AskHarbor API", version=get_version())
-
 settings = get_settings()
+
+
+def _load_startup_content() -> BotRepository:
+    """Load every bot once at startup, or stop with the full list of problems."""
+    try:
+        return BotRepository(load_content_directory(settings.content_dir))
+    except ContentLoadError as error:
+        raise SystemExit(
+            f"AskHarbor cannot start because the bot content in {settings.content_dir} "
+            f"is invalid. Fix the files below or point ASKHARBOR_CONTENT_DIR at a valid "
+            f"directory.\n{error}"
+        ) from None
+
+
+repository = _load_startup_content()
+
+
+def reload_content() -> bool:
+    """Reload every bot from the content directory and swap the set atomically.
+
+    The new set replaces the old one only when every file validates. Otherwise
+    the problems are logged and the bots already loaded keep being served.
+    Returns True when the swap happened.
+    """
+    try:
+        bots = load_content_directory(settings.content_dir)
+    except ContentLoadError as error:
+        logger.error(
+            "Content reload rejected, keeping the %d bot(s) already loaded (%s).\n%s",
+            len(repository.ids()),
+            ", ".join(repository.ids()),
+            error,
+        )
+        return False
+    repository.replace(bots)
+    logger.info("Content reloaded from %s: %s", settings.content_dir, ", ".join(repository.ids()))
+    return True
+
+
+def install_reload_signal(loop: asyncio.AbstractEventLoop) -> Callable[[], None]:
+    """Reload content on SIGHUP. Returns a function that removes the handler.
+
+    The handler is registered on the event loop, so the reload runs on the loop
+    thread and never races a request handler. Platforms without SIGHUP and
+    loops outside the main thread cannot register signal handlers; both cases
+    are logged and the server keeps running without the reload signal.
+    """
+    reload_signal = getattr(signal, "SIGHUP", None)
+    if reload_signal is None:
+        logger.warning("Content reload signal is not available on this platform.")
+        return lambda: None
+    try:
+        loop.add_signal_handler(reload_signal, reload_content)
+    except (NotImplementedError, RuntimeError, ValueError) as error:
+        logger.warning("Content reload signal could not be installed: %s", error)
+        return lambda: None
+    return lambda: loop.remove_signal_handler(reload_signal)
+
+
+def _ensure_logging() -> None:
+    """Show reload results on the console when nothing else configured logging.
+
+    uvicorn only configures its own loggers, so without this a successful
+    reload would be silent and only errors would reach the console.
+    """
+    if not logging.getLogger().handlers:
+        logging.basicConfig(level=logging.INFO, format="%(levelname)s:     %(message)s")
+    logger.setLevel(logging.INFO)
+
+
+@asynccontextmanager
+async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+    _ensure_logging()
+    remove_handler = install_reload_signal(asyncio.get_running_loop())
+    try:
+        yield
+    finally:
+        remove_handler()
+
+
+app = FastAPI(title="AskHarbor API", version=get_version(), lifespan=lifespan)
+
 message_limiter = FixedWindowRateLimiter(
     limit=settings.message_rate_limit,
     window_seconds=settings.message_rate_window_seconds,

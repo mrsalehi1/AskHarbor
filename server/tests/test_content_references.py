@@ -2,9 +2,8 @@ import pytest
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
-from app.main import app
+from app.main import app, repository
 from app.models import AnswerNode, BotConfig, BotDefinition, ChatOption
-from app.repository import repository
 
 client = TestClient(app)
 

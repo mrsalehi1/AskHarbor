@@ -77,3 +77,34 @@ def test_origins_with_ports_keep_the_port(monkeypatch: pytest.MonkeyPatch) -> No
 def test_slash_only_value_refuses_to_start(monkeypatch: pytest.MonkeyPatch) -> None:
     with pytest.raises(ValidationError, match=ENV_VAR):
         make_settings(monkeypatch, "/, //")
+
+
+# --- content directory -------------------------------------------------------
+
+CONTENT_VAR = "ASKHARBOR_CONTENT_DIR"
+
+
+def test_content_dir_defaults_to_the_server_content_folder(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv(CONTENT_VAR, raising=False)
+    settings = Settings(_env_file=None)
+    assert settings.content_dir.name == "content"
+    assert settings.content_dir.parent.name == "server"
+    assert (settings.content_dir / "demo.json").is_file()
+
+
+def test_content_dir_can_be_overridden(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv(CONTENT_VAR, "/srv/askharbor/bots")
+    settings = Settings(_env_file=None)
+    assert str(settings.content_dir) == "/srv/askharbor/bots"
+
+
+@pytest.mark.parametrize("value", ["", "   "])
+def test_blank_content_dir_refuses_to_start(monkeypatch: pytest.MonkeyPatch, value: str) -> None:
+    monkeypatch.setenv(CONTENT_VAR, value)
+    with pytest.raises(ValidationError) as excinfo:
+        Settings(_env_file=None)
+    message = str(excinfo.value)
+    assert CONTENT_VAR in message
+    assert "server/content" in message
