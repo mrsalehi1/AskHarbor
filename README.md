@@ -6,7 +6,7 @@ The browser widget uses TypeScript and Shadow DOM. A Python FastAPI service supp
 
 ## Current status
 
-This is an early prototype with one fictional demo bot. It supports embedding, configurable branding, guided answer flows and a retry option when a request fails. Automated tests cover the basic API and widget flows.
+This is an early prototype with one fictional demo bot. It supports embedding, configurable branding, guided answer flows, a single retry when a request fails, a back to menu button, validated origin and content settings, and a per client request limit on the messages endpoint. Automated tests cover the API, the configuration rules and the widget flows.
 
 Bot content currently lives in `server/app/repository.py`. Content files, a visual editor and deployment automation are planned work. The [roadmap](ROADMAP.md) separates that work from the features available today.
 
@@ -176,14 +176,16 @@ The version shown at `/docs` and in `/openapi.json` is read from the installed p
 
 ## Request limits
 
-`POST /messages` allows **30 requests per client address per 60 second window** by default. Answers are predefined, and a visitor following a guided conversation sends one request per click, so an ordinary session stays far below this.
+**Where the limit is enforced.** Inside the API process itself, on `POST /api/v1/bots/{bot_id}/messages` only. It is applied before the bot or option is looked up, so even unknown options count toward the budget. `GET /health` and `GET /api/v1/bots/{bot_id}` are never limited. There is no proxy or gateway configuration in this repository yet; see the caveats below for when you need one.
 
-**Where the limit is enforced:** inside the API process itself, on `POST /api/v1/bots/{bot_id}/messages` only. There is no proxy involved; the demo setup in this repository serves the API directly, and the limiter is the only throttle. `GET /health` and `GET /api/v1/bots/{bot_id}` are never limited, so monitoring and widget start-up keep working while a client is throttled.
+**Default.** 30 requests per client address per 60 second window. Answers are predefined and a visitor following a guided conversation sends one request per click, so an ordinary session stays far below this.
+
+**How to configure it.** Set these in the environment or in `server/.env`:
 
 | Variable | Default | Meaning |
 | :--- | :--- | :--- |
-| `ASKHARBOR_MESSAGE_RATE_LIMIT` | `30` | Requests allowed per client within one window. `0` disables the limit. Negative values are rejected at startup. |
-| `ASKHARBOR_MESSAGE_RATE_WINDOW_SECONDS` | `60` | Length of the window. Must be at least 1. |
+| `ASKHARBOR_MESSAGE_RATE_LIMIT` | `30` | Requests allowed per client address within one window. `0` disables the limit. Negative or non numeric values stop the server at startup. |
+| `ASKHARBOR_MESSAGE_RATE_WINDOW_SECONDS` | `60` | Length of the window in seconds. Must be at least 1. |
 
 For example, to allow 10 requests every 30 seconds:
 
@@ -192,21 +194,27 @@ ASKHARBOR_MESSAGE_RATE_LIMIT=10
 ASKHARBOR_MESSAGE_RATE_WINDOW_SECONDS=30
 ```
 
-Requests over the limit get `429 Too Many Requests`. The response carries a `Retry-After` header with the whole number of seconds (at least 1) until that client's window resets, and the body repeats it:
+**What a rejected request looks like.** The first request over the limit, and every further one until the window resets, receives:
 
 ```http
 HTTP/1.1 429 Too Many Requests
 Retry-After: 42
 Content-Type: application/json
 
-{"detail": "Too many requests. Try again in 42 seconds."}
+{"detail":"Too many requests. Try again in 42 seconds."}
 ```
 
-The window is fixed, counted from a client's first request: rejected requests do not extend it, so waiting out the `Retry-After` interval always restores the full budget. The widget treats a `429` like any other failed request: it shows "Sorry, the answer could not be loaded. Please try again." with the same question offered as a retry, and the visitor can also use the menu button to start over. The widget does not read `Retry-After` or wait automatically, so a visitor who retries immediately will see the same message until the window resets.
+`Retry-After` is the whole number of seconds, at least 1, until the client's current window ends, so it shrinks on each rejected attempt. Rejected requests do not extend the window.
 
-What the limiter stores: a fixed window counter per client address, in process memory, capped at 10000 entries. Expired windows are evicted first, then the oldest live one. Nothing is written to disk, no visitor IDs, cookies or profiles are created, and the counters disappear when the process stops. The client address is taken from the TCP connection; `X-Forwarded-For` is not read, so behind a reverse proxy all visitors share the proxy's address and one limit.
+**How retry works.** The window is fixed, not sliding. The first request from an address opens a window, later requests in that window are counted, and once the window length has passed the next request opens a fresh window with a full budget. The widget treats a `429` like any other failed request: it shows "Sorry, the answer could not be loaded. Please try again." with the same question offered as a single retry button, and the visitor can also use the menu button to start over. The widget does not read `Retry-After` and does not wait automatically, so a visitor who retries straight away sees the same message until the window resets. Repeated retries never stack errors or duplicate the question.
 
-More than one worker breaks the accounting. Each uvicorn worker keeps its own counters, so with `--workers 4` a client can send roughly four times the configured limit, and a request rejected by one worker may be accepted by the next. For a single process demo this is fine. For multi worker or multi instance deployments, enforce the limit at the reverse proxy or load balancer instead and set `ASKHARBOR_MESSAGE_RATE_LIMIT=0` to avoid confusing double limiting. The deployment stage of the [roadmap](ROADMAP.md) is where that proxy configuration is meant to be written down.
+**What the limiter stores.** One fixed window counter per client address, in process memory, capped at 10000 entries. Expired windows are evicted first, then the oldest live one. Nothing is written to disk, no visitor IDs, cookies or profiles are created, and the counters disappear when the process stops.
+
+**What does not hold up with more than one worker.** Each uvicorn worker process keeps its own counters. With `--workers 4` a client can send roughly four times the configured limit, a request rejected by one worker may be accepted by the next, and `Retry-After` values from different workers disagree. The same applies to several instances behind a load balancer.
+
+**What does not hold up behind a reverse proxy.** The client address is taken from the TCP connection. `X-Forwarded-For` and `Forwarded` are not read, so behind a reverse proxy, CDN or load balancer every visitor appears as the proxy's address and all of them share one budget. That is far too strict for real traffic and would block legitimate visitors.
+
+**Recommendation beyond a single process demo.** Enforce the limit at the reverse proxy or load balancer, keyed on the real client address, and set `ASKHARBOR_MESSAGE_RATE_LIMIT=0` so the API does not add a second, misleading limit. Writing down that proxy configuration belongs to the deployment stage of the [roadmap](ROADMAP.md) and is still pending.
 
 ## Checks
 
