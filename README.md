@@ -6,7 +6,7 @@ The browser widget uses TypeScript and Shadow DOM. A Python FastAPI service supp
 
 ## Current status
 
-This is an early prototype with one fictional demo bot. It supports embedding, configurable branding, guided answer flows and a retry option when a request fails. Automated tests cover the basic API and widget flows.
+This is an early prototype with one fictional demo bot. It supports embedding, configurable branding, guided answer flows, a single retry when a request fails, a back to menu button, validated origin and content settings, and a per client request limit on the messages endpoint. Automated tests cover the API, the configuration rules and the widget flows.
 
 Bot content currently lives in `server/app/repository.py`. Content files, a visual editor and deployment automation are planned work. The [roadmap](ROADMAP.md) separates that work from the features available today.
 
@@ -144,7 +144,17 @@ Serve the built `widget/dist/askharbor.js` file and add this before the host pag
 ></script>
 ```
 
-These addresses are placeholders. Replace them with your own widget and API addresses when testing a deployment. Set `ASKHARBOR_ALLOWED_ORIGINS` to the exact host origins, separated by commas. Keep origin values free of paths and trailing slashes.
+These addresses are placeholders. Replace them with your own widget and API addresses when testing a deployment. Set `ASKHARBOR_ALLOWED_ORIGINS` to the exact host origins, separated by commas. Spaces around each origin and trailing slashes are trimmed, so `https://example.com/` matches the browser origin `https://example.com`. Ports are kept. Paths are not supported.
+
+`ASKHARBOR_ALLOWED_ORIGINS` accepts a comma separated list of exact origins or `*`:
+
+```bash
+ASKHARBOR_ALLOWED_ORIGINS=https://www.example.com,https://app.example.com  # production sites
+ASKHARBOR_ALLOWED_ORIGINS=http://127.0.0.1:4173                            # the local demo
+ASKHARBOR_ALLOWED_ORIGINS=*                                                # any origin, local development only
+```
+
+Leaving the variable unset is not the same as setting it to an empty value. Unset means the server falls back to the default `*` and allows any origin. Set but without a usable origin (blank, or only spaces, commas, or slashes) means the server refuses to start and prints an error naming the variable, because an empty allow list would silently block every browser request. To get the default back, delete the variable from the environment and from `server/.env` rather than leaving it empty.
 
 The widget sends a selected option ID to the API. It has no free text field, visitor account system, transcript database or analytics integration. Hosting services can still record request metadata, so check their logging settings before using the application beyond a local demo.
 
@@ -158,7 +168,53 @@ The `create({ apiUrl, botId, container? })` function is also exported for applic
 | `GET /api/v1/bots/{bot_id}` | Returns the branding, greeting and opening questions. |
 | `POST /api/v1/bots/{bot_id}/messages` | Accepts `{"option_id":"getting-started"}` and returns an answer with follow up choices. |
 
+The messages endpoint is rate limited per client address. Over the limit it returns `429` with a `Retry-After` header giving the whole seconds until the client's window resets, and a detail of the form `Too many requests. Try again in N seconds.` Health checks and the bot configuration endpoint are never limited. See [Request limits](#request-limits).
+
 Unknown bots return `404`. Unknown option IDs return `400`. Invalid request fields return `422`.
+
+The version shown at `/docs` and in `/openapi.json` is read from the installed package metadata, falling back to `server/pyproject.toml` for a source checkout. To release a new API version, change the `version` field in `server/pyproject.toml` only. Bot content is checked when the server starts: a follow up or opening option that points at an answer ID that does not exist stops startup with an error naming the bot, the answer and the missing ID, so a typo in the content cannot silently remove a button.
+
+## Request limits
+
+**Where the limit is enforced.** Inside the API process itself, on `POST /api/v1/bots/{bot_id}/messages` only. It is applied before the bot or option is looked up, so even unknown options count toward the budget. `GET /health` and `GET /api/v1/bots/{bot_id}` are never limited. There is no proxy or gateway configuration in this repository yet; see the caveats below for when you need one.
+
+**Default.** 30 requests per client address per 60 second window. Answers are predefined and a visitor following a guided conversation sends one request per click, so an ordinary session stays far below this.
+
+**How to configure it.** Set these in the environment or in `server/.env`:
+
+| Variable | Default | Meaning |
+| :--- | :--- | :--- |
+| `ASKHARBOR_MESSAGE_RATE_LIMIT` | `30` | Requests allowed per client address within one window. `0` disables the limit. Negative or non numeric values stop the server at startup. |
+| `ASKHARBOR_MESSAGE_RATE_WINDOW_SECONDS` | `60` | Length of the window in seconds. Must be at least 1. |
+
+For example, to allow 10 requests every 30 seconds:
+
+```bash
+ASKHARBOR_MESSAGE_RATE_LIMIT=10
+ASKHARBOR_MESSAGE_RATE_WINDOW_SECONDS=30
+```
+
+**What a rejected request looks like.** The first request over the limit, and every further one until the window resets, receives:
+
+```http
+HTTP/1.1 429 Too Many Requests
+Retry-After: 42
+Content-Type: application/json
+
+{"detail":"Too many requests. Try again in 42 seconds."}
+```
+
+`Retry-After` is the whole number of seconds, at least 1, until the client's current window ends, so it shrinks on each rejected attempt. Rejected requests do not extend the window.
+
+**How retry works.** The window is fixed, not sliding. The first request from an address opens a window, later requests in that window are counted, and once the window length has passed the next request opens a fresh window with a full budget. The widget treats a `429` like any other failed request: it shows "Sorry, the answer could not be loaded. Please try again." with the same question offered as a single retry button, and the visitor can also use the menu button to start over. The widget does not read `Retry-After` and does not wait automatically, so a visitor who retries straight away sees the same message until the window resets. Repeated retries never stack errors or duplicate the question.
+
+**What the limiter stores.** One fixed window counter per client address, in process memory, capped at 10000 entries. Expired windows are evicted first, then the oldest live one. Nothing is written to disk, no visitor IDs, cookies or profiles are created, and the counters disappear when the process stops.
+
+**What does not hold up with more than one worker.** Each uvicorn worker process keeps its own counters. With `--workers 4` a client can send roughly four times the configured limit, a request rejected by one worker may be accepted by the next, and `Retry-After` values from different workers disagree. The same applies to several instances behind a load balancer.
+
+**What does not hold up behind a reverse proxy.** The client address is taken from the TCP connection. `X-Forwarded-For` and `Forwarded` are not read, so behind a reverse proxy, CDN or load balancer every visitor appears as the proxy's address and all of them share one budget. That is far too strict for real traffic and would block legitimate visitors.
+
+**Recommendation beyond a single process demo.** Enforce the limit at the reverse proxy or load balancer, keyed on the real client address, and set `ASKHARBOR_MESSAGE_RATE_LIMIT=0` so the API does not add a second, misleading limit. Writing down that proxy configuration belongs to the deployment stage of the [roadmap](ROADMAP.md) and is still pending.
 
 ## Checks
 
