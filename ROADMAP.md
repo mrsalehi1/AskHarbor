@@ -4,7 +4,7 @@ AskHarbor's next stage is a dependable guided FAQ tool that a site owner can con
 
 ## Starting point
 
-The current prototype has a TypeScript widget, a FastAPI service, one fictional demo bot, basic API and widget tests, and a local example page. Bot definitions are still written in Python. The setup and CI added alongside this roadmap are preparation work and are excluded from the estimates below.
+The prototype at the start of this roadmap had a TypeScript widget, a FastAPI service, one fictional demo bot written in Python, basic API and widget tests, and a local example page. Since then, stages 1 to 3 have moved bot content into validated JSON files with a reload signal, added a second fictional bot, and added a local browser editor with a live preview and guarded import and export. The setup and CI added alongside this roadmap are preparation work and are excluded from the estimates below.
 
 ## 1. Make answer flows reliable
 
@@ -22,7 +22,7 @@ Done when valid conversations still work, invalid content produces useful errors
 
 Estimated effort: 6 to 8 hours.
 
-1. Define a versioned JSON format for branding, opening questions, answer nodes and follow up choices. **Done** on `feat/content-files`: `format_version` 1, one bot per file, identity from `config.id`, opening labels taken from the answers, API responses unchanged.
+1. Define a versioned JSON format for branding, opening questions, answer nodes and follow up choices. **Done** on `dev`: `format_version` 1, one bot per file, identity from `config.id`, opening labels taken from the answers, API responses unchanged.
 2. Load a configured content file instead of editing Python to change answers. **Done.** `ASKHARBOR_CONTENT_DIR` selects the directory, defaulting to `server/content/`.
 3. Validate duplicate IDs, missing references, empty labels, invalid colors and malformed files. **Done.** Also checks the format version, required fields, unknown keys, ID and color patterns and length caps, and reports every problem with its path. Invalid content stops startup with the full list.
 4. Make import and reload atomic so rejected content leaves the last valid definition available. **Done** for reload: `SIGHUP` reloads every file and swaps the whole set only when all of them validate; otherwise the loaded content stays. Import belongs to the editor in stage 3.
@@ -34,7 +34,7 @@ Done when two independent bots can be configured from files, valid content survi
 
 Estimated effort: 8 to 12 hours.
 
-1. Let a site owner edit branding, questions, answers and follow up choices in the browser. **Done** on `feat/local-editor`: plain TypeScript forms over one draft document at `editor.html` in the widget build.
+1. Let a site owner edit branding, questions, answers and follow up choices in the browser. **Done** on `dev`: plain TypeScript forms over one draft document at `editor.html` in the widget build.
 2. Show a draft conversation preview before exporting a bot definition. **Done.** The preview is the real widget reading from the draft through a local transport; embeds keep using HTTP unchanged.
 3. Support JSON import and export using the same validation rules as the API. **Done.** The browser validation mirrors the server's paths and messages and both are tested against the shared fixtures in `fixtures/content/`.
 4. Preserve the current draft when an import fails and explain the error. **Done.** Files are validated before they replace anything; a rejected import lists its problems and leaves the draft alone. Export is disabled while the draft is invalid.
@@ -69,7 +69,7 @@ Done when a fresh deployment serves the widget and demo API, health checks succe
 
 The remaining open work, stage 4 and the rest of stage 5, is estimated at 8 to 12 hours, including implementation, tests and documentation. These are planning estimates based on the current prototype. Update them as work is completed or a task changes.
 
-Stage 1 is complete and merged to `dev`: issues 1 to 5 are fixed with regression tests. The API side of issue 6 (stage 5, item 4) is also on `dev`; proxy enforcement and deployment documentation are still pending. Stage 2 is implemented on the `feat/content-files` branch and stage 3 on `feat/local-editor`, which builds on it; both await review. Stage 4 has not started and the rest of stage 5 is still pending; their estimates are unchanged. Existing issue fixes are part of stage 1 and stage 5, rather than additional work counted twice.
+Stage 1 is complete and merged to `dev`: issues 1 to 5 are fixed with regression tests. The API side of issue 6 (stage 5, item 4) is also on `dev`; proxy enforcement and deployment documentation are still pending. Stages 2 and 3 are complete and merged to `dev`: bot content is loaded from JSON files with validation and an atomic reload, and the local editor creates, previews, imports and exports those files with the same validation. Stage 4 has not started and the rest of stage 5 is still pending; their estimates are unchanged. Existing issue fixes are part of stage 1 and stage 5, rather than additional work counted twice.
 
 ## Data and product boundaries
 
