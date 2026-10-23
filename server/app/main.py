@@ -6,10 +6,11 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.middleware.cors import CORSMiddleware
 
+from .auth_routes import AuthService, build_router
 from .config import get_settings
 from .content import ContentLoadError, load_content_directory
+from .cors import PublicCORSMiddleware
 from .models import BotConfig, ChatOption, MessageRequest, MessageResponse
 from .rate_limit import FixedWindowRateLimiter
 from .repository import BotRepository
@@ -110,9 +111,48 @@ def _ensure_logging() -> None:
     logger.setLevel(logging.INFO)
 
 
+def _session_factory():
+    """Database sessions for accounts, or None when no database is configured."""
+    if not settings.accounts_enabled:
+        return None
+    from .db import session_factory
+
+    assert settings.database_url is not None
+    return session_factory(settings.database_url)
+
+
+auth_service = AuthService(settings, _session_factory())
+
+
+def prepare_accounts() -> None:
+    """Check the database and create the bootstrap admin once.
+
+    Runs at startup in every worker. Each worker checks that the migrations are
+    current, then runs the bootstrap inside a database lock so exactly one of
+    them creates the first admin and the rest see it and skip.
+    """
+    if auth_service.factory is None:
+        logger.info("Accounts disabled: ASKHARBOR_DATABASE_URL is not set.")
+        return
+    from .auth import bootstrap_admin, purge_expired_sessions
+    from .storage import assert_database_ready
+
+    assert_database_ready(auth_service.factory.kw["bind"], ALEMBIC_DIR)
+    with auth_service.factory() as db, db.begin():
+        bootstrap_admin(db, settings)
+        purged = purge_expired_sessions(db)
+    if purged:
+        logger.info("Removed %d expired login session(s).", purged)
+
+
 @asynccontextmanager
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     _ensure_logging()
+    try:
+        prepare_accounts()
+    except SystemExit as error:
+        # Inside the lifespan a SystemExit would be swallowed; make uvicorn fail loudly.
+        raise RuntimeError(str(error)) from None
     remove_handler = install_reload_signal(asyncio.get_running_loop())
     try:
         yield
@@ -126,13 +166,10 @@ message_limiter = FixedWindowRateLimiter(
     limit=settings.message_rate_limit,
     window_seconds=settings.message_rate_window_seconds,
 )
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=settings.cors_origins,
-    allow_credentials=settings.cors_origins != ["*"],
-    allow_methods=["GET", "POST"],
-    allow_headers=["Content-Type"],
-)
+# Cross-origin access is for the widget's public routes only; account routes
+# are same-origin by design.
+app.add_middleware(PublicCORSMiddleware, allow_origins=settings.cors_origins)
+app.include_router(build_router(auth_service))
 
 
 @app.get("/health")

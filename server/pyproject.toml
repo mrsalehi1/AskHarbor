@@ -5,6 +5,7 @@ description = "API for the AskHarbor embeddable guided chatbot"
 requires-python = ">=3.11"
 dependencies = [
   "alembic>=1.14,<2.0",
+  "argon2-cffi>=23.1,<26.0",
   "fastapi>=0.115,<1.0",
   "psycopg[binary]>=3.2,<4.0",
   "pydantic-settings>=2.6,<3.0",
