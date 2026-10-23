@@ -13,6 +13,20 @@ _EMPTY_ORIGINS_MESSAGE = (
 )
 
 
+def _parse_origins(value: str) -> list[str]:
+    """Split a comma separated origin list, trimming spaces and trailing slashes.
+
+    Browsers send the Origin header without a trailing slash, so a configured
+    value like https://example.com/ must match https://example.com.
+    """
+    origins = []
+    for entry in value.split(","):
+        origin = entry.strip().rstrip("/")
+        if origin:
+            origins.append(origin)
+    return origins
+
+
 class Settings(BaseSettings):
     allowed_origins: str = "*"
 
@@ -21,13 +35,13 @@ class Settings(BaseSettings):
     @field_validator("allowed_origins")
     @classmethod
     def refuse_blank_origins(cls, value: str) -> str:
-        if not [origin for origin in value.split(",") if origin.strip()]:
+        if not _parse_origins(value):
             raise ValueError(_EMPTY_ORIGINS_MESSAGE)
         return value
 
     @property
     def cors_origins(self) -> list[str]:
-        return [origin.strip() for origin in self.allowed_origins.split(",") if origin.strip()]
+        return _parse_origins(self.allowed_origins)
 
 
 @lru_cache

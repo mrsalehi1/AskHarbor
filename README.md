@@ -144,7 +144,7 @@ Serve the built `widget/dist/askharbor.js` file and add this before the host pag
 ></script>
 ```
 
-These addresses are placeholders. Replace them with your own widget and API addresses when testing a deployment. Set `ASKHARBOR_ALLOWED_ORIGINS` to the exact host origins, separated by commas. Keep origin values free of paths and trailing slashes.
+These addresses are placeholders. Replace them with your own widget and API addresses when testing a deployment. Set `ASKHARBOR_ALLOWED_ORIGINS` to the exact host origins, separated by commas. Spaces around each origin and trailing slashes are trimmed, so `https://example.com/` matches the browser origin `https://example.com`. Ports are kept. Paths are not supported.
 
 `ASKHARBOR_ALLOWED_ORIGINS` accepts a comma separated list of exact origins or `*`:
 
@@ -154,7 +154,7 @@ ASKHARBOR_ALLOWED_ORIGINS=http://127.0.0.1:4173                            # the
 ASKHARBOR_ALLOWED_ORIGINS=*                                                # any origin, local development only
 ```
 
-Leaving the variable unset is not the same as setting it to an empty value. Unset means the server falls back to the default `*` and allows any origin. Set but blank (or containing only spaces and commas) means the server refuses to start and prints an error naming the variable, because an empty allow list would silently block every browser request. To get the default back, delete the variable from the environment and from `server/.env` rather than leaving it empty.
+Leaving the variable unset is not the same as setting it to an empty value. Unset means the server falls back to the default `*` and allows any origin. Set but without a usable origin (blank, or only spaces, commas, or slashes) means the server refuses to start and prints an error naming the variable, because an empty allow list would silently block every browser request. To get the default back, delete the variable from the environment and from `server/.env` rather than leaving it empty.
 
 The widget sends a selected option ID to the API. It has no free text field, visitor account system, transcript database or analytics integration. Hosting services can still record request metadata, so check their logging settings before using the application beyond a local demo.
 

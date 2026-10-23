@@ -11,10 +11,10 @@ The current prototype has a TypeScript widget, a FastAPI service, one fictional 
 Estimated effort: 4 to 6 hours.
 
 1. Fix the stale error messages described in [issue 1](https://github.com/mrsalehi1/AskHarbor/issues/1). A successful retry should clear the earlier failure without duplicating the question. **Done.** Fixed on `dev` with regression tests; the issue is closed.
-2. Handle empty and incorrectly formatted origin settings with clear validation. See [issue 2](https://github.com/mrsalehi1/AskHarbor/issues/2) and [issue 3](https://github.com/mrsalehi1/AskHarbor/issues/3). **Partly done.** Issue 2 is fixed with regression tests on the `fix/server-config-validation` branch: a blank value now stops startup with a clear error, while an unset variable keeps the default. Issue 3 (trailing slashes and other formatting) is still open.
+2. Handle empty and incorrectly formatted origin settings with clear validation. See [issue 2](https://github.com/mrsalehi1/AskHarbor/issues/2) and [issue 3](https://github.com/mrsalehi1/AskHarbor/issues/3). **Done** on the `fix/server-config-validation` branch, with regression tests. A blank value now stops startup with a clear error while an unset variable keeps the default (issue 2), and configured origins are normalized so spaces and trailing slashes no longer break CORS matching (issue 3).
 3. Detect missing answer references instead of silently removing follow up options. See [issue 4](https://github.com/mrsalehi1/AskHarbor/issues/4).
 4. Read the API version from package metadata. See [issue 5](https://github.com/mrsalehi1/AskHarbor/issues/5).
-5. Add regression tests for the corrected behavior, including repeated failures and recovery. **Partly done.** Issues 1 and 2 have regression coverage; the remaining items do not.
+5. Add regression tests for the corrected behavior, including repeated failures and recovery. **Partly done.** Issues 1, 2 and 3 have regression coverage, including a CORS test for the trailing slash case; the remaining items do not.
 
 Done when valid conversations still work, invalid content produces useful errors, and the existing issues have passing regression coverage.
 
@@ -69,7 +69,7 @@ Done when a fresh deployment serves the widget and demo API, health checks succe
 
 The open work above is estimated at 26 to 38 hours, including implementation, tests and documentation. These are planning estimates based on the current prototype. Update them as work is completed or a task changes.
 
-Stage 1 is in progress: issues 1 and 2 are fixed with regression tests, and issues 3, 4 and 5 remain. Stages 2 through 5 remain planned. Existing issue fixes are part of stage 1 and stage 5, rather than additional work counted twice.
+Stage 1 is in progress: issues 1, 2 and 3 are fixed with regression tests, and issues 4 and 5 remain. Stages 2 through 5 remain planned. Existing issue fixes are part of stage 1 and stage 5, rather than additional work counted twice.
 
 ## Data and product boundaries
 
