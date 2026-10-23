@@ -9,16 +9,14 @@ and every table is truncated between tests.
 import importlib
 import json
 import os
-from pathlib import Path
 
 import pytest
 from alembic.autogenerate import compare_metadata
-from alembic.config import Config
 from alembic.runtime.migration import MigrationContext
+from conftest import ALEMBIC_DIR, SERVER_DIR, TEST_URL, requires_database
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, select, text
 
-from alembic import command
 from app import config, main
 from app.content import (
     ContentLoadError,
@@ -36,40 +34,9 @@ from app.storage import (
     save_bot_document,
 )
 
-TEST_URL_VAR = "ASKHARBOR_TEST_DATABASE_URL"
-TEST_URL = os.environ.get(TEST_URL_VAR, "")
-SERVER_DIR = Path(__file__).resolve().parents[1]
 CONTENT_DIR = SERVER_DIR / "content"
-ALEMBIC_DIR = SERVER_DIR / "alembic"
 
-pytestmark = pytest.mark.skipif(
-    not TEST_URL,
-    reason=f"set {TEST_URL_VAR} to a disposable PostgreSQL database to run these",
-)
-
-
-@pytest.fixture(scope="session")
-def engine():
-    engine = create_engine(TEST_URL)
-    alembic_config = Config(str(SERVER_DIR / "alembic.ini"))
-    alembic_config.set_main_option("script_location", str(ALEMBIC_DIR))
-    os.environ["ASKHARBOR_DATABASE_URL"] = TEST_URL
-    command.downgrade(alembic_config, "base")
-    command.upgrade(alembic_config, "head")
-    yield engine
-    engine.dispose()
-
-
-@pytest.fixture
-def session(engine):
-    from sqlalchemy.orm import Session
-
-    tables = ", ".join(table.name for table in Base.metadata.sorted_tables)
-    with engine.connect() as connection:
-        connection.execute(text(f"TRUNCATE {tables} RESTART IDENTITY CASCADE"))
-        connection.commit()
-    with Session(engine) as session:
-        yield session
+pytestmark = requires_database
 
 
 def test_migrated_schema_matches_the_orm_models(engine) -> None:

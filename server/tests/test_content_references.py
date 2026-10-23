@@ -2,10 +2,8 @@ import pytest
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
-from app.main import app, repository
+from app import main
 from app.models import AnswerNode, BotConfig, BotDefinition, ChatOption
-
-client = TestClient(app)
 
 
 def build_bot(bot_id: str, answers: dict[str, AnswerNode], opening: list[str]) -> BotDefinition:
@@ -54,7 +52,7 @@ def test_valid_bot_is_accepted() -> None:
 
 
 def test_demo_bot_references_are_all_valid() -> None:
-    bot = repository.get("demo")
+    bot = main.repository.get("demo")
     assert bot is not None
     referenced = {oid for node in bot.answers.values() for oid in node.next_option_ids}
     referenced |= {option.id for option in bot.config.options}
@@ -79,8 +77,11 @@ def test_message_endpoint_reports_missing_reference_instead_of_dropping_it(
             "start": AnswerNode(label="Start", answer="Hello", next_option_ids=["pricng"]),
         },
     )
-    monkeypatch.setitem(repository._bots, "broken", broken)
+    # Resolve the live app and repository at call time: other test modules
+    # reload app.main, which rebuilds both.
+    monkeypatch.setitem(main.repository._bots, "broken", broken)
 
+    client = TestClient(main.app)
     response = client.post("/api/v1/bots/broken/messages", json={"option_id": "start"})
 
     assert response.status_code == 500
