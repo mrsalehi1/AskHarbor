@@ -6,14 +6,21 @@
     "greeting": "Welcome to Harbor Library. What would you like to know?",
     "launcher_label": "Open library help",
     "primary_color": "#0f766e",
-    "opening_option_ids": ["hours", "card", "borrowing", "events"]
+    "opening_option_ids": [
+      "hours",
+      "card",
+      "borrowing",
+      "events"
+    ]
   },
   "answers": [
     {
       "id": "hours",
       "label": "When is the library open?",
       "answer": "The reading room is open Monday to Friday from 9 am to 7 pm and on Saturday from 10 am to 4 pm. It is closed on Sunday.",
-      "next_option_ids": ["holiday-hours"]
+      "next_option_ids": [
+        "holiday-hours"
+      ]
     },
     {
       "id": "holiday-hours",
@@ -24,7 +31,10 @@
       "id": "card",
       "label": "How do I get a library card?",
       "answer": "Bring a photo ID and proof of address to the front desk. Cards are issued while you wait and work on the same day.",
-      "next_option_ids": ["card-cost", "borrowing"]
+      "next_option_ids": [
+        "card-cost",
+        "borrowing"
+      ]
     },
     {
       "id": "card-cost",
@@ -35,7 +45,10 @@
       "id": "borrowing",
       "label": "How many items can I borrow?",
       "answer": "You can have up to 12 items on loan at a time. Books are lent for three weeks and films for one week.",
-      "next_option_ids": ["renewals", "late-returns"]
+      "next_option_ids": [
+        "renewals",
+        "late-returns"
+      ]
     },
     {
       "id": "renewals",

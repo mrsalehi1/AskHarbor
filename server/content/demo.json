@@ -6,20 +6,29 @@
     "greeting": "Hi! What can I help you with?",
     "launcher_label": "Open support chat",
     "primary_color": "#155eef",
-    "opening_option_ids": ["getting-started", "features", "contact"]
+    "opening_option_ids": [
+      "getting-started",
+      "features",
+      "contact"
+    ]
   },
   "answers": [
     {
       "id": "getting-started",
       "label": "How do I get started?",
       "answer": "Add the AskHarbor script before your closing body tag and provide your server URL and bot ID.",
-      "next_option_ids": ["installation", "customize"]
+      "next_option_ids": [
+        "installation",
+        "customize"
+      ]
     },
     {
       "id": "features",
       "label": "What can this chatbot do?",
       "answer": "This version provides guided answers from your server. You choose a question and receive a predefined answer with any follow up choices.",
-      "next_option_ids": ["customize"]
+      "next_option_ids": [
+        "customize"
+      ]
     },
     {
       "id": "contact",
