@@ -1,0 +1,24 @@
+{
+  "description": "a bot needs at least one answer",
+  "expected_problems": [
+    {
+      "path": "answers",
+      "contains": "at least 1"
+    }
+  ],
+  "content": {
+    "format_version": 1,
+    "config": {
+      "id": "shop",
+      "name": "Shop help",
+      "greeting": "Hi. What do you need?",
+      "launcher_label": "Open shop help",
+      "primary_color": "#336699",
+      "opening_option_ids": [
+        "start",
+        "pricing"
+      ]
+    },
+    "answers": []
+  }
+}

@@ -1,0 +1,46 @@
+{
+  "description": "every problem is reported, not just the first",
+  "expected_problems": [
+    {
+      "path": "config.primary_color",
+      "contains": "hex color"
+    },
+    {
+      "path": "answers[1].label",
+      "contains": "blank"
+    },
+    {
+      "path": "config.greeting",
+      "contains": "blank"
+    }
+  ],
+  "content": {
+    "format_version": 1,
+    "config": {
+      "id": "shop",
+      "name": "Shop help",
+      "greeting": " ",
+      "launcher_label": "Open shop help",
+      "primary_color": "red",
+      "opening_option_ids": [
+        "start",
+        "pricing"
+      ]
+    },
+    "answers": [
+      {
+        "id": "start",
+        "label": "Where do I start?",
+        "answer": "Pick a topic.",
+        "next_option_ids": [
+          "pricing"
+        ]
+      },
+      {
+        "id": "pricing",
+        "label": "",
+        "answer": "It is free."
+      }
+    ]
+  }
+}

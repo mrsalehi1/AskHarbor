@@ -1,0 +1,43 @@
+{
+  "description": "two answers share an id",
+  "expected_problems": [
+    {
+      "path": "answers[2].id",
+      "contains": "duplicate answer id 'pricing'"
+    }
+  ],
+  "content": {
+    "format_version": 1,
+    "config": {
+      "id": "shop",
+      "name": "Shop help",
+      "greeting": "Hi. What do you need?",
+      "launcher_label": "Open shop help",
+      "primary_color": "#336699",
+      "opening_option_ids": [
+        "start",
+        "pricing"
+      ]
+    },
+    "answers": [
+      {
+        "id": "start",
+        "label": "Where do I start?",
+        "answer": "Pick a topic.",
+        "next_option_ids": [
+          "pricing"
+        ]
+      },
+      {
+        "id": "pricing",
+        "label": "What does it cost?",
+        "answer": "It is free."
+      },
+      {
+        "id": "pricing",
+        "label": "Again",
+        "answer": "Dup"
+      }
+    ]
+  }
+}

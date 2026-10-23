@@ -1,0 +1,35 @@
+{
+  "description": "a bot needs at least one opening question",
+  "expected_problems": [
+    {
+      "path": "config.opening_option_ids",
+      "contains": "at least 1"
+    }
+  ],
+  "content": {
+    "format_version": 1,
+    "config": {
+      "id": "shop",
+      "name": "Shop help",
+      "greeting": "Hi. What do you need?",
+      "launcher_label": "Open shop help",
+      "primary_color": "#336699",
+      "opening_option_ids": []
+    },
+    "answers": [
+      {
+        "id": "start",
+        "label": "Where do I start?",
+        "answer": "Pick a topic.",
+        "next_option_ids": [
+          "pricing"
+        ]
+      },
+      {
+        "id": "pricing",
+        "label": "What does it cost?",
+        "answer": "It is free."
+      }
+    ]
+  }
+}
