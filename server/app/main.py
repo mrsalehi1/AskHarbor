@@ -1,9 +1,13 @@
+import logging
+
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
 from .config import get_settings
 from .models import BotConfig, ChatOption, MessageRequest, MessageResponse
 from .repository import repository
+
+logger = logging.getLogger("askharbor")
 
 app = FastAPI(title="AskHarbor API", version="0.1.5")
 
@@ -40,9 +44,17 @@ def create_message(bot_id: str, message: MessageRequest) -> MessageResponse:
     if node is None:
         raise HTTPException(status_code=400, detail="Unknown option")
 
+    missing = [oid for oid in node.next_option_ids if oid not in bot.answers]
+    if missing:
+        detail = (
+            f"Bot '{bot_id}' answer '{message.option_id}' references missing option(s) "
+            f"{', '.join(repr(oid) for oid in missing)}"
+        )
+        logger.error(detail)
+        raise HTTPException(status_code=500, detail=detail)
+
     options = [
         ChatOption(id=option_id, label=bot.answers[option_id].label)
         for option_id in node.next_option_ids
-        if option_id in bot.answers
     ]
     return MessageResponse(answer=node.answer, options=options)

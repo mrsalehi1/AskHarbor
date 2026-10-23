@@ -12,7 +12,7 @@ Estimated effort: 4 to 6 hours.
 
 1. Fix the stale error messages described in [issue 1](https://github.com/mrsalehi1/AskHarbor/issues/1). A successful retry should clear the earlier failure without duplicating the question. **Done.** Fixed on `dev` with regression tests; the issue is closed.
 2. Handle empty and incorrectly formatted origin settings with clear validation. See [issue 2](https://github.com/mrsalehi1/AskHarbor/issues/2) and [issue 3](https://github.com/mrsalehi1/AskHarbor/issues/3). **Done** on the `fix/server-config-validation` branch, with regression tests. A blank value now stops startup with a clear error while an unset variable keeps the default (issue 2), and configured origins are normalized so spaces and trailing slashes no longer break CORS matching (issue 3).
-3. Detect missing answer references instead of silently removing follow up options. See [issue 4](https://github.com/mrsalehi1/AskHarbor/issues/4).
+3. Detect missing answer references instead of silently removing follow up options. See [issue 4](https://github.com/mrsalehi1/AskHarbor/issues/4). **Done** on the `fix/server-config-validation` branch with regression tests. Bot content is validated when it is built, and the error names the bot, the answer holding the bad reference and the missing option ID. If invalid content ever reaches the messages endpoint, it returns a 500 with the same details instead of dropping the option.
 4. Read the API version from package metadata. See [issue 5](https://github.com/mrsalehi1/AskHarbor/issues/5).
 5. Add regression tests for the corrected behavior, including repeated failures and recovery. **Partly done.** Issues 1, 2 and 3 have regression coverage, including a CORS test for the trailing slash case; the remaining items do not.
 
