@@ -1,7 +1,8 @@
 from functools import lru_cache
 from pathlib import Path
+from typing import Literal
 
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # Bot content files ship next to the package so a fresh checkout starts without configuration.
@@ -11,6 +12,13 @@ _EMPTY_CONTENT_DIR_MESSAGE = (
     "ASKHARBOR_CONTENT_DIR is set but empty. Set it to the directory holding the bot "
     "content files, one JSON file per bot, or remove the variable from the environment and "
     "from server/.env to use the default server/content directory."
+)
+
+_DATABASE_URL_REQUIRED_MESSAGE = (
+    "ASKHARBOR_CONTENT_SOURCE is 'database' but ASKHARBOR_DATABASE_URL is not set. "
+    "Set it to a PostgreSQL URL such as "
+    "postgresql+psycopg://askharbor:askharbor@127.0.0.1:5432/askharbor, "
+    "or set ASKHARBOR_CONTENT_SOURCE=files to serve bots from the content directory."
 )
 
 _EMPTY_ORIGINS_MESSAGE = (
@@ -44,8 +52,18 @@ class Settings(BaseSettings):
     message_rate_window_seconds: int = Field(default=60, ge=1)
     # Directory of bot content files, one JSON file per bot.
     content_dir: Path = Field(default=DEFAULT_CONTENT_DIR)
+    # Where the public bots are served from: JSON files (default) or PostgreSQL.
+    content_source: Literal["files", "database"] = "files"
+    # SQLAlchemy URL for PostgreSQL, e.g. postgresql+psycopg://user:pass@host/db.
+    database_url: str | None = None
 
     model_config = SettingsConfigDict(env_prefix="ASKHARBOR_", env_file=".env")
+
+    @model_validator(mode="after")
+    def database_mode_needs_a_url(self) -> "Settings":
+        if self.content_source == "database" and not (self.database_url or "").strip():
+            raise ValueError(_DATABASE_URL_REQUIRED_MESSAGE)
+        return self
 
     @field_validator("allowed_origins")
     @classmethod

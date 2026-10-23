@@ -282,12 +282,15 @@ def load_bot_file(path: Path) -> BotDefinition:
     return parse_bot_content(text).to_definition()
 
 
-def load_content_directory(directory: Path) -> dict[str, BotDefinition]:
-    """Load every ``*.json`` file in ``directory`` as one bot each.
+def load_content_documents(directory: Path) -> dict[str, Any]:
+    """Load every ``*.json`` file in ``directory`` as one raw bot document each.
 
-    Either every file is valid and the complete set is returned, or a
-    ``ContentLoadError`` lists every problem in every file and nothing is
-    returned, so the caller never ends up with a partial set.
+    The returned documents are the parsed JSON values exactly as written, keyed
+    by the bot ID inside each one, after passing full validation. Either every
+    file is valid and the complete set is returned, or a ``ContentLoadError``
+    lists every problem in every file and nothing is returned, so the caller
+    never ends up with a partial set. This is the single loading path for both
+    the file repository and the database importer.
     """
     if not directory.is_dir():
         raise ContentLoadError(
@@ -301,16 +304,27 @@ def load_content_directory(directory: Path) -> dict[str, BotDefinition]:
             [FileReport(directory, [ContentProblem("", "content directory has no .json files")])]
         )
 
-    bots: dict[str, BotDefinition] = {}
+    documents: dict[str, Any] = {}
     defined_in: dict[str, Path] = {}
     reports: list[FileReport] = []
     for path in files:
         try:
-            bot = load_bot_file(path)
+            text = path.read_text(encoding="utf-8")
+        except UnicodeDecodeError as error:
+            reports.append(
+                FileReport(path, [ContentProblem("", f"file is not UTF-8 text: {error}")])
+            )
+            continue
+        try:
+            data = json.loads(text)
+            validate_bot_content(data)
         except InvalidBotContent as error:
             reports.append(FileReport(path, error.problems))
             continue
-        bot_id = bot.config.id
+        except json.JSONDecodeError as error:
+            reports.append(FileReport(path, [ContentProblem("", f"malformed JSON: {error}")]))
+            continue
+        bot_id = data["config"]["id"]
         if bot_id in defined_in:
             reports.append(
                 FileReport(
@@ -325,7 +339,20 @@ def load_content_directory(directory: Path) -> dict[str, BotDefinition]:
             )
             continue
         defined_in[bot_id] = path
-        bots[bot_id] = bot
+        documents[bot_id] = data
     if reports:
         raise ContentLoadError(reports)
-    return bots
+    return documents
+
+
+def definition_from_document(document: Any) -> BotDefinition:
+    """Build the runtime definition from an already validated raw document."""
+    return BotContentFile.model_validate(document).to_definition()
+
+
+def load_content_directory(directory: Path) -> dict[str, BotDefinition]:
+    """Load every bot in ``directory`` as a runtime definition, all or nothing."""
+    return {
+        bot_id: definition_from_document(document)
+        for bot_id, document in load_content_documents(directory).items()
+    }

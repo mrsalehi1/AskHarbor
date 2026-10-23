@@ -3,6 +3,7 @@ import logging
 import signal
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -18,6 +19,8 @@ logger = logging.getLogger("askharbor")
 
 settings = get_settings()
 
+ALEMBIC_DIR = Path(__file__).resolve().parents[1] / "alembic"
+
 
 def _load_startup_content() -> BotRepository:
     """Load every bot once at startup, or stop with the full list of problems."""
@@ -31,16 +34,36 @@ def _load_startup_content() -> BotRepository:
         ) from None
 
 
-repository = _load_startup_content()
+def _database_content_source():
+    """Serve bots from PostgreSQL, refusing to start on an unmigrated database."""
+    from .db import get_engine, session_factory
+    from .storage import DatabaseContentSource, assert_database_ready
+
+    assert settings.database_url is not None  # enforced by Settings validation
+    assert_database_ready(get_engine(settings.database_url), ALEMBIC_DIR)
+    return DatabaseContentSource(session_factory(settings.database_url))
+
+
+# In file mode this is the in-memory repository with SIGHUP reload. In database
+# mode it reads live, so edits are visible without any reload, every worker
+# sees the same content, and the endpoints below are identical in both modes.
+repository = (
+    _database_content_source() if settings.content_source == "database"
+    else _load_startup_content()
+)
 
 
 def reload_content() -> bool:
     """Reload every bot from the content directory and swap the set atomically.
 
-    The new set replaces the old one only when every file validates. Otherwise
-    the problems are logged and the bots already loaded keep being served.
-    Returns True when the swap happened.
+    File mode only: the new set replaces the old one when every file validates,
+    otherwise the problems are logged and the loaded bots keep being served.
+    Database mode reads live, so the signal only logs a note. Returns True when
+    a swap happened.
     """
+    if settings.content_source == "database":
+        logger.info("Content reload signal ignored: database mode reads live.")
+        return False
     try:
         bots = load_content_directory(settings.content_dir)
     except ContentLoadError as error:
