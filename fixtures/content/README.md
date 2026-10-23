@@ -1,10 +1,10 @@
 # Bot content fixtures
 
 Shared test cases for the bot content format described in the README under
-"Bot content". The API tests in `server/tests/test_content_validation.py` run
-every file here. The planned browser editor should run the same files through
-its own validation, so both sides accept and reject the same content for the
-same reasons.
+"Bot content". The API tests in `server/tests/test_content_validation.py` and
+the widget tests in `widget/tests/content.test.ts` run every file here, so the
+server and the browser editor accept and reject the same content for the same
+reasons.
 
 ## Layout
 

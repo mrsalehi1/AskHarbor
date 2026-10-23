@@ -8,7 +8,7 @@ The browser widget uses TypeScript and Shadow DOM. A Python FastAPI service supp
 
 This is an early prototype with two fictional bots. It supports embedding, configurable branding, guided answer flows, a single retry when a request fails, a back to menu button, validated origin and content settings, and a per client request limit on the messages endpoint. Automated tests cover the API, the configuration rules, the content format and the widget flows.
 
-Bot content lives in JSON files, one per bot, in `server/content/`. The server validates every file at startup and can reload them without a restart. See [Bot content](#bot-content). A visual editor and deployment automation are planned work. The [roadmap](ROADMAP.md) separates that work from the features available today.
+Bot content lives in JSON files, one per bot, in `server/content/`. The server validates every file at startup and can reload them without a restart. See [Bot content](#bot-content). A local browser editor creates and changes these files without touching Python or the server: see [Content editor](#content-editor). Deployment automation is planned work. The [roadmap](ROADMAP.md) separates that work from the features available today.
 
 The active product plan is guided FAQ support using public reference content. Earlier AI and RAG ideas are outside this plan. The current code does not call a model or retrieve documents.
 
@@ -82,6 +82,10 @@ This checks the behavior fixed for [issue 1](https://github.com/mrsalehi1/AskHar
 5. Break the file, for example by deleting a closing bracket, and send the signal again. Terminal 1 prints the problem with the file name, path and reason, and the previous content keeps being served.
 
 To show the library bot on the example page, change `data-bot-id="demo"` to `data-bot-id="library"` in `examples/demo.html`, run `npm run build` again and reload the page.
+
+### Try the content editor
+
+With the widget built and terminal 3 serving it, open [http://127.0.0.1:4173/editor.html](http://127.0.0.1:4173/editor.html). The editor runs entirely in the browser; the API does not need to be running. Edit the starter bot, open the chat button in the corner to preview the conversation, then use **Export JSON** and drop the downloaded file into `server/content/` (or import `server/content/demo.json` to start from the demo). See [Content editor](#content-editor).
 
 The detailed sections below cover each step and the embed snippet for other sites.
 
@@ -255,7 +259,7 @@ kill -HUP $(pgrep -f "uvicorn app.main:app")
 
 A successful reload logs `Content reloaded from <directory>: demo, library`. A rejected one logs `Content reload rejected, keeping the N bot(s) already loaded (...)` followed by the problems. There is no HTTP endpoint for reloading, by design: the API has no authentication, and a reload endpoint would let anyone on the network trigger file reads.
 
-**Adding a bot.** Copy `server/content/library.json`, change `config.id` and the content, keep it fictional or public, then restart or send the reload signal. The widget embed for the new bot uses its `config.id` in `data-bot-id`. The shared fixtures in `fixtures/content/` show valid and invalid examples with the problems each one should produce; the planned browser editor will use the same files so both sides agree on what is valid.
+**Adding a bot.** Create one in the [content editor](#content-editor) and export it, or copy `server/content/library.json` and change `config.id` and the content. Keep it fictional or public, then restart or send the reload signal. The widget embed for the new bot uses its `config.id` in `data-bot-id`. The shared fixtures in `fixtures/content/` show valid and invalid examples with the problems each one should produce; the editor and the API are both tested against the same files so they agree on what is valid.
 
 **Limitations.**
 
@@ -264,6 +268,28 @@ A successful reload logs `Content reloaded from <directory>: demo, library`. A r
 - Answers are plain text. Links, markdown and HTML are shown literally.
 - Answers that no opening or follow up option can reach are allowed and not reported.
 - The content directory is read once per startup or reload. There is no file watcher.
+
+## Content editor
+
+`editor.html` in the built widget output is a local, single page editor for one bot at a time. Build the widget and serve `widget/dist` as in the quick start, then open [http://127.0.0.1:4173/editor.html](http://127.0.0.1:4173/editor.html). Everything happens inside the browser tab: the editor makes no network requests, so it works without the API and nothing you type leaves the machine.
+
+**Forms.** Plain input fields for the branding, the greeting, the launcher label and the color, plus one section per answer with its ID, question label, answer text and follow up choices. Opening questions and follow ups are chosen from the existing answer IDs and can be reordered or removed. Buttons add and remove whole answers.
+
+**Validation.** The draft is checked on every keystroke with the same rules, paths and messages as the API, so a problem reads the same in the browser as in a server log, for example `answers[1].next_option_ids[0]: follow up option 'pricng' has no matching answer`. Problems are listed next to the form and the offending fields are outlined. The TypeScript and Python validators are tested against the same shared cases in `fixtures/content/`, so they cannot quietly drift apart.
+
+**Preview.** The preview in the corner is the real widget, not an imitation: the same code that runs on a host page, reading from your draft through a local transport instead of HTTP. Open it with the launcher button and click through the conversation, including follow ups, errors for removed answers, and the back to menu button. The preview updates when you leave a field or change the structure. While the draft has problems, the last valid draft stays in the preview and a note says so.
+
+**Import.** Choose a JSON file with the import control. The file is validated completely before anything changes: a file that is malformed or breaks a rule is reported with the same problem list and the draft you were working on is untouched. A valid file replaces the draft and the forms and preview follow.
+
+**Export.** The export button downloads the draft as `<bot id>.json`, in exactly the format the server reads, and is disabled while the draft has problems, so an invalid file cannot be produced. An imported file that is exported unchanged is byte for byte identical. Put the exported file in the content directory and restart or send the reload signal; the automated tests load an editor export through the API to keep this true.
+
+**Limitations.**
+
+- One bot per editor tab. Several bots mean several files, imported one at a time.
+- No autosave. The draft lives in the page; reloading or closing the tab discards it. Export early and often.
+- The editor edits content, not server settings. Origins, limits and the content directory stay in `server/.env`.
+- Answer text is plain text, exactly as the widget shows it.
+- There is no flow diagram; the conversation structure is visible through the follow up lists and the preview.
 
 ## Request limits
 
@@ -330,12 +356,13 @@ GitHub Actions runs these checks on pushes and pull requests. Browser checks for
 
 | Location | Purpose |
 | :--- | :--- |
-| `widget/src/` | Browser widget and styles. |
+| `widget/src/` | Browser widget, styles, shared content validation and the editor. |
 | `server/app/` | API, settings, content loading and validation. |
 | `server/content/` | Bot content files, one JSON file per bot. |
 | `fixtures/content/` | Shared valid and invalid content cases used by the API tests and, later, the editor. |
 | `server/tests/` and `widget/tests/` | Automated tests. |
 | `examples/demo.html` | Local example host page. |
+| `examples/editor.html` | The local content editor page, copied into the build output. |
 | [ROADMAP.md](ROADMAP.md) | Planned work and completion criteria. |
 
 ## License

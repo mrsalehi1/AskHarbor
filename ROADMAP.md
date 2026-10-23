@@ -34,13 +34,13 @@ Done when two independent bots can be configured from files, valid content survi
 
 Estimated effort: 8 to 12 hours.
 
-1. Let a site owner edit branding, questions, answers and follow up choices in the browser.
-2. Show a draft conversation preview before exporting a bot definition.
-3. Support JSON import and export using the same validation rules as the API.
-4. Preserve the current draft when an import fails and explain the error.
-5. Keep the editor local, using public or fictional FAQ content and browser file operations.
+1. Let a site owner edit branding, questions, answers and follow up choices in the browser. **Done** on `feat/local-editor`: plain TypeScript forms over one draft document at `editor.html` in the widget build.
+2. Show a draft conversation preview before exporting a bot definition. **Done.** The preview is the real widget reading from the draft through a local transport; embeds keep using HTTP unchanged.
+3. Support JSON import and export using the same validation rules as the API. **Done.** The browser validation mirrors the server's paths and messages and both are tested against the shared fixtures in `fixtures/content/`.
+4. Preserve the current draft when an import fails and explain the error. **Done.** Files are validated before they replace anything; a rejected import lists its problems and leaves the draft alone. Export is disabled while the draft is invalid.
+5. Keep the editor local, using public or fictional FAQ content and browser file operations. **Done.** The editor makes no network requests; import and export use the browser's file dialogs.
 
-Done when a user can create, preview, export and reload a complete bot without editing Python. Invalid imports must preserve the draft. The exported file must load successfully in the API.
+Done when a user can create, preview, export and reload a complete bot without editing Python. Invalid imports must preserve the draft. The exported file must load successfully in the API. All three hold: a starter draft export is committed as a shared fixture the API tests load, and the flow was exercised end to end in a real browser. Out of scope for this stage, by design: autosave (closing the tab discards the draft) and a flow diagram.
 
 ## 4. Improve accessibility and browser behavior
 
@@ -67,9 +67,9 @@ Done when a fresh deployment serves the widget and demo API, health checks succe
 
 ## Planning estimate
 
-The open work above is estimated at 26 to 38 hours, including implementation, tests and documentation. These are planning estimates based on the current prototype. Update them as work is completed or a task changes.
+The remaining open work, stage 4 and the rest of stage 5, is estimated at 8 to 12 hours, including implementation, tests and documentation. These are planning estimates based on the current prototype. Update them as work is completed or a task changes.
 
-Stage 1 is complete and merged to `dev`: issues 1 to 5 are fixed with regression tests. The API side of issue 6 (stage 5, item 4) is also on `dev`; proxy enforcement and deployment documentation are still pending. Stage 2 is implemented on the `feat/content-files` branch and awaits review. Stages 3 and 4 have not started and the rest of stage 5 is still pending; their estimates are unchanged. Existing issue fixes are part of stage 1 and stage 5, rather than additional work counted twice.
+Stage 1 is complete and merged to `dev`: issues 1 to 5 are fixed with regression tests. The API side of issue 6 (stage 5, item 4) is also on `dev`; proxy enforcement and deployment documentation are still pending. Stage 2 is implemented on the `feat/content-files` branch and stage 3 on `feat/local-editor`, which builds on it; both await review. Stage 4 has not started and the rest of stage 5 is still pending; their estimates are unchanged. Existing issue fixes are part of stage 1 and stage 5, rather than additional work counted twice.
 
 ## Data and product boundaries
 

@@ -12,7 +12,9 @@ Keep credentials and local settings in ignored environment files. Commit example
 
 Run the API tests and Ruff from `server/`. Run the widget tests, TypeScript check and build from `widget/`. The README lists the commands.
 
-When you change a bot content validation rule, add or update a case in `fixtures/content/` so the API tests and the planned editor keep agreeing. The README under "Bot content" describes the format; `fixtures/content/README.md` describes the case files.
+When you change a bot content validation rule, change it in both `server/app/content.py` and `widget/src/content.ts`, and add or update a case in `fixtures/content/` so the two sides keep agreeing. Both test suites run every fixture. The README under "Bot content" describes the format; `fixtures/content/README.md` describes the case files.
+
+For an editor change, open the local editor page and check an import of `server/content/demo.json`, an import of a broken file, the preview conversation, and an export while the draft is valid and while it is not.
 
 For a widget change, open the local example page and check:
 
