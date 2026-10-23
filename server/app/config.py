@@ -1,6 +1,6 @@
 from functools import lru_cache
 
-from pydantic import field_validator
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 _EMPTY_ORIGINS_MESSAGE = (
@@ -29,6 +29,9 @@ def _parse_origins(value: str) -> list[str]:
 
 class Settings(BaseSettings):
     allowed_origins: str = "*"
+    # Requests per client allowed on POST /messages within one window. 0 disables the limit.
+    message_rate_limit: int = Field(default=30, ge=0)
+    message_rate_window_seconds: int = Field(default=60, ge=1)
 
     model_config = SettingsConfigDict(env_prefix="ASKHARBOR_", env_file=".env")
 

@@ -168,9 +168,33 @@ The `create({ apiUrl, botId, container? })` function is also exported for applic
 | `GET /api/v1/bots/{bot_id}` | Returns the branding, greeting and opening questions. |
 | `POST /api/v1/bots/{bot_id}/messages` | Accepts `{"option_id":"getting-started"}` and returns an answer with follow up choices. |
 
+The messages endpoint is rate limited per client address. Over the limit it returns `429` with a `Retry-After` header giving the whole seconds until the client's window resets, and a detail of the form `Too many requests. Try again in N seconds.` Health checks and the bot configuration endpoint are never limited. See [Request limits](#request-limits).
+
 Unknown bots return `404`. Unknown option IDs return `400`. Invalid request fields return `422`.
 
 The version shown at `/docs` and in `/openapi.json` is read from the installed package metadata, falling back to `server/pyproject.toml` for a source checkout. To release a new API version, change the `version` field in `server/pyproject.toml` only. Bot content is checked when the server starts: a follow up or opening option that points at an answer ID that does not exist stops startup with an error naming the bot, the answer and the missing ID, so a typo in the content cannot silently remove a button.
+
+## Request limits
+
+`POST /messages` allows **30 requests per client address per 60 second window** by default. Answers are predefined, and a visitor following a guided conversation sends one request per click, so an ordinary session stays far below this.
+
+| Variable | Default | Meaning |
+| :--- | :--- | :--- |
+| `ASKHARBOR_MESSAGE_RATE_LIMIT` | `30` | Requests allowed per client within one window. `0` disables the limit. Negative values are rejected at startup. |
+| `ASKHARBOR_MESSAGE_RATE_WINDOW_SECONDS` | `60` | Length of the window. Must be at least 1. |
+
+For example, to allow 10 requests every 30 seconds:
+
+```bash
+ASKHARBOR_MESSAGE_RATE_LIMIT=10
+ASKHARBOR_MESSAGE_RATE_WINDOW_SECONDS=30
+```
+
+Requests over the limit get `429 Too Many Requests` with a `Retry-After` header. The widget treats a `429` like any other failed request: it shows "Sorry, the answer could not be loaded. Please try again." with the same question offered as a retry, and the visitor can also use the menu button to start over. The widget does not read `Retry-After` or wait automatically, so a visitor who retries immediately will see the same message until the window resets.
+
+What the limiter stores: a fixed window counter per client address, in process memory, capped at 10000 entries. Expired windows are evicted first, then the oldest live one. Nothing is written to disk, no visitor IDs, cookies or profiles are created, and the counters disappear when the process stops. The client address is taken from the TCP connection; `X-Forwarded-For` is not read, so behind a reverse proxy all visitors share the proxy's address and one limit.
+
+More than one worker breaks the accounting. Each uvicorn worker keeps its own counters, so with `--workers 4` a client can send roughly four times the configured limit, and a request rejected by one worker may be accepted by the next. For a single process demo this is fine. For multi worker or multi instance deployments, enforce the limit at the reverse proxy or load balancer instead and set `ASKHARBOR_MESSAGE_RATE_LIMIT=0` to avoid confusing double limiting. The deployment stage of the [roadmap](ROADMAP.md) is where that proxy configuration is meant to be written down.
 
 ## Checks
 
