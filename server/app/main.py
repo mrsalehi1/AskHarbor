@@ -6,10 +6,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from .config import get_settings
 from .models import BotConfig, ChatOption, MessageRequest, MessageResponse
 from .repository import repository
+from .version import get_version
 
 logger = logging.getLogger("askharbor")
 
-app = FastAPI(title="AskHarbor API", version="0.1.5")
+app = FastAPI(title="AskHarbor API", version=get_version())
 
 settings = get_settings()
 app.add_middleware(

@@ -168,7 +168,9 @@ The `create({ apiUrl, botId, container? })` function is also exported for applic
 | `GET /api/v1/bots/{bot_id}` | Returns the branding, greeting and opening questions. |
 | `POST /api/v1/bots/{bot_id}/messages` | Accepts `{"option_id":"getting-started"}` and returns an answer with follow up choices. |
 
-Unknown bots return `404`. Unknown option IDs return `400`. Invalid request fields return `422`. Bot content is checked when the server starts: a follow up or opening option that points at an answer ID that does not exist stops startup with an error naming the bot, the answer and the missing ID, so a typo in the content cannot silently remove a button.
+Unknown bots return `404`. Unknown option IDs return `400`. Invalid request fields return `422`.
+
+The version shown at `/docs` and in `/openapi.json` is read from the installed package metadata, falling back to `server/pyproject.toml` for a source checkout. To release a new API version, change the `version` field in `server/pyproject.toml` only. Bot content is checked when the server starts: a follow up or opening option that points at an answer ID that does not exist stops startup with an error naming the bot, the answer and the missing ID, so a typo in the content cannot silently remove a button.
 
 ## Checks
 
