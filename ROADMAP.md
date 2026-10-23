@@ -65,14 +65,27 @@ Estimated effort: 4 to 6 hours.
 
 Done when a fresh deployment serves the widget and demo API, health checks succeed, and rollback and cleanup have been rehearsed. Cloud checks require a separately configured account; local development remains available without one.
 
+## 6. Accounts, access control and database storage
+
+Estimated effort: 30 to 44 hours, in four rounds.
+
+AskHarbor grows from a single-owner tool into one service managing bots for several websites: an admin creates users and websites and assigns users to websites; after login a user sees only their websites and can edit only those bots. This stores the project's first credentials (password hashes and login sessions), which the data boundaries section below now reflects.
+
+1. **Database foundation** (8 to 12 hours). PostgreSQL with SQLAlchemy 2 and Alembic migrations. Tables for users, sessions, websites, memberships and one validated JSONB bot document per website with a revision that detects conflicting saves. A batch import command moves the JSON content files into the database; file mode keeps working and the public API and bot IDs are unchanged. **Done** on `feat/database-foundation`: schema, migrations, revision-guarded saves, all-or-nothing import with skip-or-replace, database content mode with identical API responses, tests against real PostgreSQL in CI, and documentation. Login, the bootstrap admin and the admin pages are explicitly later rounds.
+2. **Accounts and login** (10 to 14 hours). Argon2id password hashes, database-backed cookie sessions, a bootstrap admin created once from environment settings with a forced password change, login rate limiting, and CORS scoped to the public bot routes only.
+3. **Admin and connected editor** (8 to 12 hours). Admin API and pages for users, websites and memberships. The editor gains login, a website picker limited to accessible websites, and load and save against the server using the revision to detect conflicting saves. Import and export stay as browser file operations.
+4. **Per website settings** (4 to 6 hours). Allowed origins per website enforced on the public routes, replacing the global list for database-backed bots.
+
+Done when an admin can create users and websites and assign access, a user sees and edits only their own websites' bots, a restart never resets existing credentials, and the public widgets keep working throughout.
+
 ## Planning estimate
 
-The remaining open work, stage 4 and the rest of stage 5, is estimated at 8 to 12 hours, including implementation, tests and documentation. These are planning estimates based on the current prototype. Update them as work is completed or a task changes.
+The remaining open work — stage 4, the rest of stage 5, and stage 6 — is estimated at 38 to 56 hours, including implementation, tests and documentation. Round 1 of stage 6 is implemented and under review. These are planning estimates based on the current prototype. Update them as work is completed or a task changes.
 
 Stage 1 is complete and merged to `dev`: issues 1 to 5 are fixed with regression tests. The API side of issue 6 (stage 5, item 4) is also on `dev`; proxy enforcement and deployment documentation are still pending. Stages 2 and 3 are complete and merged to `dev`: bot content is loaded from JSON files with validation and an atomic reload, and the local editor creates, previews, imports and exports those files with the same validation. Stage 4 has not started and the rest of stage 5 is still pending; their estimates are unchanged. Existing issue fixes are part of stage 1 and stage 5, rather than additional work counted twice.
 
 ## Data and product boundaries
 
-Development examples use fictional content. The current plan does not add visitor profiles, contact collection, stored conversations, customer datasets or regulated records. Request metadata at the hosting layer needs separate attention when testing a deployment.
+Development examples use fictional content. Stage 6 adds site owner accounts: usernames, password hashes and login sessions for the people who edit bots. Visitors remain untracked — the plan still adds no visitor profiles, contact collection, stored conversations, customer datasets or regulated records. Request metadata at the hosting layer needs separate attention when testing a deployment.
 
 Model training, model evaluation, AI inference infrastructure, document embeddings and RAG are outside this roadmap. Any later change in direction should be recorded explicitly before that work begins.

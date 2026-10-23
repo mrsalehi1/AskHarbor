@@ -269,6 +269,55 @@ A successful reload logs `Content reloaded from <directory>: demo, library`. A r
 - Answers that no opening or follow up option can reach are allowed and not reported.
 - The content directory is read once per startup or reload. There is no file watcher.
 
+## PostgreSQL storage
+
+Bots can be served from PostgreSQL instead of the content files. This is the foundation for the planned accounts and access control: the schema already includes users, sessions, websites and memberships, but nothing uses them yet — there is no login and the public endpoints stay exactly as they are. File mode remains the default and needs no database.
+
+**What is stored.** One website row per bot, where the website `slug` is the public bot ID (`demo`, `library`), so existing embeds keep working. Each website has one bot document, the same validated JSON as a content file, in a JSONB column with a `revision` number. Every save must name the revision it started from and bumps it by one; a save against a stale revision changes nothing and reports the current revision, so two people editing the same bot cannot silently overwrite each other.
+
+### Set up PostgreSQL natively on Ubuntu
+
+```bash
+sudo apt install postgresql
+sudo -u postgres createuser --pwprompt askharbor   # choose a local password, e.g. askharbor
+sudo -u postgres createdb --owner askharbor askharbor
+sudo -u postgres createdb --owner askharbor askharbor_test   # only needed to run the tests
+```
+
+Ubuntu starts the server automatically and listens on `127.0.0.1:5432`. Check with `pg_isready`. These are local development names and passwords; a deployment sets its own credentials through the environment.
+
+### Migrate, import and run
+
+From `server/` with the environment active, set the URL (or put it in `server/.env`):
+
+```bash
+export ASKHARBOR_DATABASE_URL=postgresql+psycopg://askharbor:askharbor@127.0.0.1:5432/askharbor
+python -m alembic upgrade head          # create or update the schema
+python -m app.import_content            # load server/content into the database
+ASKHARBOR_CONTENT_SOURCE=database python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --no-access-log
+```
+
+The import validates the whole directory with the usual content rules before anything is written and commits all bots in one transaction: one bad file means nothing is imported and every problem is listed. A bot ID that already exists in the database is skipped and reported; run `python -m app.import_content --replace` to overwrite existing bots instead, which bumps their revisions like any other save. A different directory can be passed as an argument.
+
+In database mode the server reads content live, so there is no reload signal to send: a change is visible on the next request, in every worker. `SIGHUP` is accepted and logged as ignored. At startup the server checks that the database is reachable and migrated to the current head, and refuses to start with a message naming `python -m alembic upgrade head` otherwise, so a schema change cannot be half-applied silently. Switching back to file mode is `ASKHARBOR_CONTENT_SOURCE=files` (or removing the variable); the files are untouched by the import.
+
+### Test against a real PostgreSQL
+
+The database tests only run when `ASKHARBOR_TEST_DATABASE_URL` points at a disposable database. They migrate it from scratch with Alembic and truncate tables between tests, so never point this at a database whose content you want to keep.
+
+```bash
+cd server
+ASKHARBOR_TEST_DATABASE_URL=postgresql+psycopg://askharbor:askharbor@127.0.0.1:5432/askharbor_test python -m pytest
+```
+
+Without the variable those tests are skipped and the rest of the suite runs as before. CI runs them against a PostgreSQL 16 service container. The suite includes a schema drift check that fails if the SQLAlchemy models and the Alembic migrations stop describing the same tables.
+
+**Limitations.**
+
+- Accounts, login and the admin interface do not exist yet. The `users`, `sessions` and `website_members` tables are created empty for the next rounds, and the editor still works with files, not the database.
+- Database mode queries PostgreSQL on each request (with a small per-revision cache for the built definition). That is fine at demo scale and unmeasured beyond it.
+- The import command and the editor do not talk to each other yet; moving an edited bot into the database is export, then import.
+
 ## Content editor
 
 `editor.html` in the built widget output is a local, single page editor for one bot at a time. Build the widget and serve `widget/dist` as in the quick start, then open [http://127.0.0.1:4173/editor.html](http://127.0.0.1:4173/editor.html). Everything happens inside the browser tab: the editor makes no network requests, so it works without the API and nothing you type leaves the machine.
@@ -357,7 +406,8 @@ GitHub Actions runs these checks on pushes and pull requests. Browser checks for
 | Location | Purpose |
 | :--- | :--- |
 | `widget/src/` | Browser widget, styles, shared content validation and the editor. |
-| `server/app/` | API, settings, content loading and validation. |
+| `server/app/` | API, settings, content loading and validation, database models and storage. |
+| `server/alembic/` | Database migrations, applied with `python -m alembic upgrade head`. |
 | `server/content/` | Bot content files, one JSON file per bot. |
 | `fixtures/content/` | Shared valid and invalid content cases used by the API tests and, later, the editor. |
 | `server/tests/` and `widget/tests/` | Automated tests. |
