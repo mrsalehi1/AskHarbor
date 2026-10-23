@@ -6,9 +6,9 @@ The browser widget uses TypeScript and Shadow DOM. A Python FastAPI service supp
 
 ## Current status
 
-This is an early prototype with two fictional bots. It supports embedding, configurable branding, guided answer flows, a single retry when a request fails, a back to menu button, validated origin and content settings, and a per client request limit on the messages endpoint. Automated tests cover the API, the configuration rules, the content format and the widget flows.
+AskHarbor is a small multi-website service. With PostgreSQL configured, an admin creates users and websites and assigns users to websites; each user signs in to the panel at `/admin/`, sees only their websites, and edits each one's questions and answers, branding, domain name and allowed origins, copies the embed snippet, and exports or imports backups. Two fictional sample bots are loaded at first start. See [The panel](#the-panel) and [Accounts and login](#accounts-and-login).
 
-Bot content lives in JSON files, one per bot, in `server/content/`. The server validates every file at startup and can reload them without a restart. See [Bot content](#bot-content). A local browser editor creates and changes these files without touching Python or the server: see [Content editor](#content-editor). Deployment automation is planned work. The [roadmap](ROADMAP.md) separates that work from the features available today.
+Without a database the server still works as a single-owner tool: bots come from JSON files in `server/content/` (see [Bot content](#bot-content)) and the standalone editor at `editor.html` edits those files (see [Content editor](#content-editor)). The widget, its retry and back to menu behavior, origin validation and the per client request limit work the same in both setups. Automated tests cover the API, the configuration rules, the content format, the accounts and the browser code. Deployment automation is planned work; the [roadmap](ROADMAP.md) separates it from the features available today.
 
 The active product plan is guided FAQ support using public reference content. Earlier AI and RAG ideas are outside this plan. The current code does not call a model or retrieve documents.
 
@@ -271,7 +271,7 @@ A successful reload logs `Content reloaded from <directory>: demo, library`. A r
 
 ## PostgreSQL storage
 
-Bots can be served from PostgreSQL instead of the content files. This is the foundation for the planned accounts and access control: the schema already includes users, sessions, websites and memberships, but nothing uses them yet — there is no login and the public endpoints stay exactly as they are. File mode remains the default and needs no database.
+With `ASKHARBOR_DATABASE_URL` set, bots are served from PostgreSQL and edited in the panel; without it they come from the content files. `ASKHARBOR_CONTENT_SOURCE` can force `files` or `database`. The public endpoints and the bot IDs are identical in both modes.
 
 **What is stored.** One website row per bot, where the website `slug` is the public bot ID (`demo`, `library`), so existing embeds keep working. Each website has one bot document, the same validated JSON as a content file, in a JSONB column with a `revision` number. Every save must name the revision it started from and bumps it by one; a save against a stale revision changes nothing and reports the current revision, so two people editing the same bot cannot silently overwrite each other.
 
@@ -314,7 +314,7 @@ Without the variable those tests are skipped and the rest of the suite runs as b
 
 **Limitations.**
 
-- User management and the admin interface do not exist yet; see [Accounts and login](#accounts-and-login) for what works today. The editor still works with files, not the database.
+- The standalone `editor.html` edits files, not the database; use the panel for database-backed websites, or export from one and import into the other.
 - Database mode queries PostgreSQL on each request (with a small per-revision cache for the built definition). That is fine at demo scale and unmeasured beyond it.
 - The import command and the editor do not talk to each other yet; moving an edited bot into the database is export, then import.
 
@@ -333,7 +333,7 @@ The account is created with a forced password change: until it is changed, every
 
 **Production.** Set `ASKHARBOR_ENV=production`. The server then refuses to start while the bootstrap password is the documented local one or shorter than 12 characters, or while `ASKHARBOR_COOKIE_SECURE` is false, and prints which variable to fix. Supply `ASKHARBOR_BOOTSTRAP_ADMIN_PASSWORD` (and optionally the username) once for the first start; it is ignored afterwards and can be removed. The admin still has to change that password at first login.
 
-**Endpoints.** All under `/api/v1`:
+**Endpoints.** All under `/api/v1`. Every route except the first four requires a session whose password change is done; the admin routes also require `is_admin`; the website routes require admin or membership and answer `404` otherwise.
 
 | Endpoint | Behavior |
 | :--- | :--- |
@@ -341,7 +341,15 @@ The account is created with a forced password change: until it is changed, every
 | `POST /auth/logout` | Revokes the session in the database and clears the cookie. `204`. |
 | `GET /auth/me` | The signed in user, including whether a password change is still required. |
 | `POST /auth/password` | JSON `{"current_password","new_password"}`. Checks the current password, applies the policy, clears the forced change and signs out the user's other sessions. |
-| `GET /websites` | Websites the user may edit: all for an admin, memberships for others. Requires the password change to be done. |
+| `GET /websites`, `GET /websites/{slug}` | The user's websites; details include the allowed origins, the current revision and the embed snippet. |
+| `PATCH /websites/{slug}` | Name, domain and allowed origins. Origins must be `scheme://host[:port]`. |
+| `GET`/`PUT /websites/{slug}/content` | The bot document with its revision. `PUT` sends `{"document","revision"}` and answers `409` with the current revision when stale, `422` with the shared problem list when invalid. |
+| `GET /websites/{slug}/export`, `POST /websites/{slug}/import` | Backup download and restore. |
+| `GET /websites/{slug}/audit` | This website's audit log. |
+| `GET`/`POST /admin/users`, `PATCH /admin/users/{id}`, `POST /admin/users/{id}/password` | Manage users; the last one sets a temporary password. |
+| `GET`/`POST /admin/websites`, `DELETE /admin/websites/{slug}` | Manage websites. |
+| `POST /admin/websites/{slug}/members`, `DELETE /admin/websites/{slug}/members/{user_id}` | Manage access. |
+| `GET /admin/audit` | The full audit log. |
 
 **Passwords.** Hashed with Argon2id (the `argon2-cffi` defaults: 64 MiB, 3 passes) and never stored or logged in clear. New passwords must be 12 to 200 characters and differ from the current one; there are no composition rules. A login for an unknown username still runs a hash check against a dummy hash, so the response time does not reveal which accounts exist.
 
@@ -349,7 +357,9 @@ The account is created with a forced password change: until it is changed, every
 
 **Cookies and cross-site protection.** The cookie is `HttpOnly`, `SameSite=Lax`, `Path=/` and `Secure`. For plain `http://127.0.0.1` development set `ASKHARBOR_COOKIE_SECURE=false`; production refuses that. Three layers stop cross-site requests: the browser does not attach a `Lax` cookie to cross-site POSTs; the login, logout and password routes compare the `Origin` (or `Referer`) host with the `Host` header and answer `403` on a mismatch; and the login and password bodies must be JSON, which an HTML form cannot send. CORS applies only to `/health` and `/api/v1/bots/`, never to account routes, so an origin allowed for the widget cannot call them with the owner's cookie.
 
-**Login rate limit.** Failed attempts are counted per client address and per username, 5 per 5 minutes by default (`ASKHARBOR_LOGIN_RATE_LIMIT`, `ASKHARBOR_LOGIN_RATE_WINDOW_SECONDS`). While over the limit even a correct password gets `429` with `Retry-After`. Successful logins do not consume the budget. Like the message limit, these counters are per process: with several workers or behind a proxy they are weaker than they look, and the proxy should enforce a limit on the login route as well.
+**Login rate limit.** Failed attempts are counted per client address and per username, 5 per 5 minutes by default (`ASKHARBOR_LOGIN_RATE_LIMIT`, `ASKHARBOR_LOGIN_RATE_WINDOW_SECONDS`). While over the limit even a correct password gets `429` with `Retry-After`. Successful logins do not consume the budget. The counters live in the `login_attempts` table, so they are shared by every worker and instance. Behind a reverse proxy the client address is still the proxy's, so all visitors share one address budget there; the per username budget still applies.
+
+**Audit log.** Sign ins, failed sign ins, sign outs, password changes and every admin, settings, content and backup action are recorded in the `audit_log` table with the user, time, client address, target and what changed. Users see their websites' entries in the panel; admins see everything.
 
 **Try it locally.** With PostgreSQL migrated as described above and the API started with `ASKHARBOR_DATABASE_URL` set and `ASKHARBOR_COOKIE_SECURE=false`:
 
@@ -363,6 +373,39 @@ curl -b cookies.txt -H 'Content-Type: application/json' \
 curl -b cookies.txt http://127.0.0.1:8000/api/v1/websites        # 200, lists imported websites
 curl -b cookies.txt -X POST http://127.0.0.1:8000/api/v1/auth/logout
 ```
+
+## The panel
+
+The panel is served by the API itself at `/admin/` from the built widget output (`npm run build` in `widget/`, location `ASKHARBOR_ADMIN_DIST`, default `widget/dist`). Serving it from the API's own origin keeps the session cookie first party. It needs accounts, so `ASKHARBOR_DATABASE_URL` must be set; see [Accounts and login](#accounts-and-login) for the local admin account.
+
+**For every user:**
+
+- **Sign in, forced password change, sign out.** A temporary password (the bootstrap admin's, a newly created user's, or one set by an admin reset) must be changed before anything else appears.
+- **Your websites.** The sidebar lists the websites you may edit: all of them for an admin, your memberships otherwise. The API enforces the same rule on every route, and a website you cannot access answers `404`.
+- **Questions and answers.** The editor from `editor.html`, with the bot ID locked to the website and a **Save** button. Saves carry the revision you loaded; if someone saved first you are told, nothing is overwritten, and one click loads their version so you can apply your change again. The public widget serves the saved version immediately. File import and export still work inside the editor.
+- **Settings.** The name shown in the panel, your website's domain name (informational), and the **connection and CORS** list: the exact origins (`https://www.example.com`) allowed to load this bot. Empty means the server default `ASKHARBOR_ALLOWED_ORIGINS` applies. Changes take effect within a couple of seconds on every worker.
+- **Install.** The script snippet to paste before `</body>` (or in `<head>`), with the API address and bot ID filled in, plus a copy button. The widget bundle itself is served at `/admin/askharbor.js`. If visitors reach the API through another address than you do, set `ASKHARBOR_PUBLIC_URL`.
+- **Backup.** Download one JSON file with settings and content, or import a backup (or a plain bot content file). An import is validated completely first and changes nothing when it fails; the bot ID inside becomes this website's ID, so a backup can move content between websites.
+- **Activity.** The audit log for this website.
+
+**For admins:**
+
+- **Users.** Create users with a temporary password, deactivate and reactivate, grant or remove admin, reset a password. Deactivation and a reset end the user's sessions at once; a reset user signs in with the temporary password and must change it. You cannot deactivate yourself or drop your own admin access.
+- **Websites.** Create a website (it gets a starter bot so its widget works at once), delete one, and manage who can access it.
+- **Activity log.** Every sign in, failed sign in, password change, user and website change, membership change, settings change, content save and backup action, with who, when, from which address, and what changed.
+
+**Sample data.** On the first start with an empty database the two fictional bots from `server/content/` are loaded as websites `demo` and `library`, so you can try the panel immediately. They are only ever loaded when there are no websites at all, so deleting them sticks across restarts. Set `ASKHARBOR_SEED_SAMPLE_CONTENT=false` to never load them.
+
+**Local walkthrough.** With PostgreSQL migrated and the widget built:
+
+```bash
+cd server
+ASKHARBOR_DATABASE_URL=postgresql+psycopg://askharbor:askharbor@127.0.0.1:5432/askharbor \
+ASKHARBOR_COOKIE_SECURE=false \
+python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --no-access-log
+```
+
+Open [http://127.0.0.1:8000/admin/](http://127.0.0.1:8000/admin/), sign in as `admin` / `ChangeMeLocal123!`, choose a new password, and the `demo` and `library` websites are ready to edit. The example page at [http://127.0.0.1:8000/admin/index.html](http://127.0.0.1:8000/admin/index.html) embeds the `demo` bot from the same server.
 
 ## Content editor
 
@@ -454,6 +497,7 @@ GitHub Actions runs these checks on pushes and pull requests. Browser checks for
 | `widget/src/` | Browser widget, styles, shared content validation and the editor. |
 | `server/app/` | API, settings, content loading and validation, database models, storage, accounts and login. |
 | `server/alembic/` | Database migrations, applied with `python -m alembic upgrade head`. |
+| `examples/admin.html` | The panel page, copied into the build output and served at `/admin/`. |
 | `server/content/` | Bot content files, one JSON file per bot. |
 | `fixtures/content/` | Shared valid and invalid content cases used by the API tests and, later, the editor. |
 | `server/tests/` and `widget/tests/` | Automated tests. |
