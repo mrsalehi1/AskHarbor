@@ -443,7 +443,7 @@ ASKHARBOR_TEST_DATABASE_URL=postgresql+psycopg://askharbor:askharbor@127.0.0.1:5
 python -m ruff check .
 ```
 
-The second command runs the database tests too and needs the disposable test database and the temporary `CREATEDB` right from the quick start. From `widget/`:
+The second command runs the database tests too and needs the disposable test database and the temporary `CREATEDB` right from the quick start. The suite ignores `server/.env` entirely (it sets `ASKHARBOR_ENV_FILE` to a file that does not exist), so your development database and origin settings never affect it; the only database it touches is the one named by `ASKHARBOR_TEST_DATABASE_URL`. From `widget/`:
 
 ```bash
 npm test

@@ -1,14 +1,20 @@
 import os
 from pathlib import Path
 
-import pytest
-from alembic.config import Config
-from sqlalchemy import create_engine, text
-from sqlalchemy.orm import Session
+# The tests must not read a developer's server/.env: a database URL in it would
+# make the suite bootstrap and seed against that database, and its origin list
+# would change CORS expectations. Point the app at a file that does not exist
+# before anything imports app.config.
+os.environ.setdefault("ASKHARBOR_ENV_FILE", str(Path(__file__).parent / "no-env-for-tests"))
 
-from alembic import command
-from app import main
-from app.orm import Base
+import pytest  # noqa: E402
+from alembic.config import Config  # noqa: E402
+from sqlalchemy import create_engine, text  # noqa: E402
+from sqlalchemy.orm import Session  # noqa: E402
+
+from alembic import command  # noqa: E402
+from app import main  # noqa: E402
+from app.orm import Base  # noqa: E402
 
 # Database tests run only against a disposable PostgreSQL named by this variable.
 TEST_URL_VAR = "ASKHARBOR_TEST_DATABASE_URL"

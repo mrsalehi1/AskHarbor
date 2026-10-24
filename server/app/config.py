@@ -1,9 +1,15 @@
+import os
 from functools import lru_cache
 from pathlib import Path
 from typing import Literal
 
 from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# Settings come from the environment first, then from this file (server/.env by
+# default). The test suite points this at a file that does not exist so a
+# developer's .env never leaks into the tests.
+ENV_FILE = os.environ.get("ASKHARBOR_ENV_FILE", ".env")
 
 # Bot content files ship next to the package so a fresh checkout starts without configuration.
 DEFAULT_CONTENT_DIR = Path(__file__).resolve().parents[1] / "content"
@@ -105,7 +111,7 @@ class Settings(BaseSettings):
     # hide_input_in_errors keeps secrets such as the bootstrap password out of
     # the startup error text when a setting is rejected.
     model_config = SettingsConfigDict(
-        env_prefix="ASKHARBOR_", env_file=".env", hide_input_in_errors=True
+        env_prefix="ASKHARBOR_", env_file=ENV_FILE, hide_input_in_errors=True
     )
 
     @model_validator(mode="after")
