@@ -131,19 +131,30 @@ def production(monkeypatch: pytest.MonkeyPatch, **values: str) -> Settings:
 
 def test_development_accepts_the_documented_local_admin(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("ASKHARBOR_ENV", raising=False)
+    monkeypatch.delenv("ASKHARBOR_BOOTSTRAP_ADMIN_PASSWORD", raising=False)
     monkeypatch.setenv("ASKHARBOR_DATABASE_URL", DB_URL)
     settings = Settings(_env_file=None)
     assert settings.env == "development"
     assert settings.bootstrap_admin_username == "admin"
-    assert settings.bootstrap_admin_password == "ChangeMeLocal123!"
+    assert settings.bootstrap_admin_password is None
+    assert settings.effective_bootstrap_password == "ChangeMeLocal123!"
     assert settings.session_hours == 12
     assert settings.cookie_secure is True
     assert settings.accounts_enabled is True
 
 
+def test_production_without_a_bootstrap_password_starts_but_cannot_bootstrap(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Removing the variable after the first start must not stop the server."""
+    settings = production(monkeypatch)
+    assert settings.bootstrap_admin_password is None
+    assert settings.effective_bootstrap_password is None
+
+
 def test_production_refuses_the_default_admin_password(monkeypatch: pytest.MonkeyPatch) -> None:
     with pytest.raises(ValidationError) as excinfo:
-        production(monkeypatch)
+        production(monkeypatch, ASKHARBOR_BOOTSTRAP_ADMIN_PASSWORD="ChangeMeLocal123!")
     message = str(excinfo.value)
     assert "ASKHARBOR_BOOTSTRAP_ADMIN_PASSWORD" in message
     assert "local development password" in message

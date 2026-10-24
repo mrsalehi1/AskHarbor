@@ -186,3 +186,19 @@ class LoginAttempt(Base):
     key: Mapped[str] = mapped_column(String(200), primary_key=True)
     window_start: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     count: Mapped[int] = mapped_column(Integer)
+
+
+class SystemState(Base):
+    """Durable markers that must not depend on other tables' rows.
+
+    ``bootstrap`` records that the first admin was created, so deleting every
+    user later never brings the documented local account back on a restart.
+    """
+
+    __tablename__ = "system_state"
+
+    key: Mapped[str] = mapped_column(String(60), primary_key=True)
+    value: Mapped[dict] = mapped_column(JSONB)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )

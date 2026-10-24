@@ -20,7 +20,7 @@ from sqlalchemy.orm import Session
 
 from app import auth, config, main
 from app.auth_routes import COOKIE_NAME, PASSWORD_CHANGE_REQUIRED
-from app.orm import LoginSession, User, Website, WebsiteMember
+from app.orm import LoginSession, SystemState, User, Website, WebsiteMember
 
 pytestmark = requires_database
 
@@ -81,7 +81,7 @@ def test_bootstrap_runs_only_once(app_module, clean_database, caplog) -> None:
     with Session(clean_database) as db:
         assert db.execute(select(User)).scalars().all().__len__() == 1
     assert "Bootstrap admin 'admin' created" in caplog.text
-    assert "Bootstrap admin skipped: 1 account(s) already exist" in caplog.text
+    assert "Bootstrap already completed; existing accounts are left alone." in caplog.text
 
 
 def test_bootstrap_is_safe_when_several_workers_start_together(clean_database) -> None:
@@ -172,9 +172,10 @@ def test_logout_revokes_the_session_and_clears_the_cookie(client, clean_database
     response = client.post("/api/v1/auth/logout")
 
     assert response.status_code == 204
-    assert "Max-Age=0" in response.headers["set-cookie"] or "expires=" in response.headers[
-        "set-cookie"
-    ].lower()
+    assert (
+        "Max-Age=0" in response.headers["set-cookie"]
+        or "expires=" in response.headers["set-cookie"].lower()
+    )
     assert client.get("/api/v1/auth/me").status_code == 401
     # Replaying the old cookie does not work either: the row is revoked, not just forgotten.
     client.cookies.set(COOKIE_NAME, token)
@@ -303,9 +304,7 @@ def test_account_routes_do_not_get_cors_headers(client) -> None:
     public = client.get("/api/v1/bots/demo", headers={"Origin": "https://shop.example"})
     assert public.headers.get("access-control-allow-origin") == "*"
 
-    account = client.post(
-        "/api/v1/auth/logout", headers={"Origin": "https://shop.example"}
-    )
+    account = client.post("/api/v1/auth/logout", headers={"Origin": "https://shop.example"})
     assert "access-control-allow-origin" not in account.headers
     preflight = client.options(
         "/api/v1/auth/login",
@@ -392,3 +391,146 @@ def test_account_routes_explain_when_accounts_are_not_configured() -> None:
     assert "ASKHARBOR_DATABASE_URL" in response.json()["detail"]
     assert plain.get("/api/v1/auth/me").status_code == 503
     assert plain.get("/api/v1/bots/demo").status_code == 200
+
+
+# --- bootstrap completion is durable --------------------------------------------------
+
+
+def test_deleting_every_user_does_not_bring_the_default_admin_back(
+    app_module, clean_database
+) -> None:
+    """Completion is recorded on its own, not inferred from the users table."""
+    with TestClient(app_module.app, base_url="https://testserver") as client:
+        assert login(client).status_code == 200
+    with clean_database.connect() as connection:
+        connection.execute(text("DELETE FROM users"))
+        connection.commit()
+
+    with TestClient(app_module.app, base_url="https://testserver") as restarted:
+        assert login(restarted).status_code == 401
+    with Session(clean_database) as db:
+        assert db.execute(select(User)).first() is None
+        marker = db.get(SystemState, auth.BOOTSTRAP_STATE_KEY)
+        assert marker is not None and marker.value["how"] == "startup"
+
+
+def test_databases_from_before_the_marker_are_marked_completed(app_module, clean_database) -> None:
+    """An existing install has users but no marker: it must not get a second admin."""
+    with Session(clean_database) as db, db.begin():
+        db.add(
+            User(
+                username="veteran",
+                password_hash=auth.hash_password("veteran-passphrase-1"),
+                is_admin=True,
+                must_change_password=False,
+            )
+        )
+
+    app_module.prepare_accounts()
+
+    with Session(clean_database) as db:
+        assert [u.username for u in db.execute(select(User)).scalars()] == ["veteran"]
+        assert db.get(SystemState, auth.BOOTSTRAP_STATE_KEY).value["how"] == "existing-accounts"
+
+
+def test_create_admin_command_recovers_a_lost_admin(
+    app_module, clean_database, monkeypatch, capsys
+) -> None:
+    from app import create_admin
+
+    with TestClient(app_module.app, base_url="https://testserver"):
+        pass
+    with clean_database.connect() as connection:
+        connection.execute(text("DELETE FROM users"))
+        connection.commit()
+    monkeypatch.setenv("ASKHARBOR_NEW_ADMIN_PASSWORD", "recovery-passphrase-2026")
+    monkeypatch.setenv("ASKHARBOR_DATABASE_URL", TEST_URL)
+    config.get_settings.cache_clear()
+    try:
+        assert create_admin.main(["rescue"]) == 0
+        assert "Admin 'rescue' is ready" in capsys.readouterr().out
+        # Exists now: refused without --reset, allowed with it.
+        assert create_admin.main(["rescue"]) == 1
+        monkeypatch.setenv("ASKHARBOR_NEW_ADMIN_PASSWORD", "another-recovery-pw-77")
+        assert create_admin.main(["rescue", "--reset"]) == 0
+        monkeypatch.setenv("ASKHARBOR_NEW_ADMIN_PASSWORD", "short")
+        assert create_admin.main(["weak"]) == 1
+    finally:
+        config.get_settings.cache_clear()
+
+    with TestClient(app_module.app, base_url="https://testserver") as client:
+        assert (
+            login(client, username="rescue", password="recovery-passphrase-2026").status_code == 401
+        )
+        assert (
+            login(client, username="rescue", password="another-recovery-pw-77").status_code == 200
+        )
+        assert client.get("/api/v1/websites").status_code == 403  # temporary password
+        body = client.get("/api/v1/auth/me").json()
+        assert body["is_admin"] is True and body["must_change_password"] is True
+
+
+# --- production restarts without the bootstrap credentials ----------------------------
+
+
+def test_production_starts_again_after_the_bootstrap_password_is_removed(
+    clean_database, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("ASKHARBOR_DATABASE_URL", TEST_URL)
+    monkeypatch.setenv("ASKHARBOR_ENV", "production")
+    monkeypatch.setenv("ASKHARBOR_BOOTSTRAP_ADMIN_PASSWORD", "first-start-secret-2026")
+    config.get_settings.cache_clear()
+    module = importlib.reload(main)
+    try:
+        with TestClient(module.app, base_url="https://testserver") as client:
+            assert (
+                client.post(
+                    "/api/v1/auth/login",
+                    json={"username": "admin", "password": "first-start-secret-2026"},
+                ).status_code
+                == 200
+            )
+
+        # The operator removes the credentials after the first start.
+        monkeypatch.delenv("ASKHARBOR_BOOTSTRAP_ADMIN_PASSWORD")
+        config.get_settings.cache_clear()
+        module = importlib.reload(main)
+        with TestClient(module.app, base_url="https://testserver") as client:
+            assert client.get("/health").status_code == 200
+            assert (
+                client.post(
+                    "/api/v1/auth/login",
+                    json={"username": "admin", "password": "first-start-secret-2026"},
+                ).status_code
+                == 200
+            )
+    finally:
+        for name in (
+            "ASKHARBOR_DATABASE_URL",
+            "ASKHARBOR_ENV",
+            "ASKHARBOR_BOOTSTRAP_ADMIN_PASSWORD",
+        ):
+            monkeypatch.delenv(name, raising=False)
+        config.get_settings.cache_clear()
+        importlib.reload(main)
+
+
+def test_production_with_no_accounts_and_no_password_refuses_to_start(
+    clean_database, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("ASKHARBOR_DATABASE_URL", TEST_URL)
+    monkeypatch.setenv("ASKHARBOR_ENV", "production")
+    monkeypatch.delenv("ASKHARBOR_BOOTSTRAP_ADMIN_PASSWORD", raising=False)
+    config.get_settings.cache_clear()
+    module = importlib.reload(main)
+    try:
+        with pytest.raises(RuntimeError, match="ASKHARBOR_BOOTSTRAP_ADMIN_PASSWORD is not set"):
+            with TestClient(module.app, base_url="https://testserver"):
+                pass
+        with Session(clean_database) as db:
+            assert db.execute(select(User)).first() is None
+    finally:
+        for name in ("ASKHARBOR_DATABASE_URL", "ASKHARBOR_ENV"):
+            monkeypatch.delenv(name, raising=False)
+        config.get_settings.cache_clear()
+        importlib.reload(main)

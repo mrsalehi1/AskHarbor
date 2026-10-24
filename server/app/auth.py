@@ -19,7 +19,7 @@ from sqlalchemy import func, select, text, update
 from sqlalchemy.orm import Session
 
 from .config import MIN_PASSWORD_LENGTH, Settings
-from .orm import LoginSession, User
+from .orm import LoginSession, SystemState, User
 
 logger = logging.getLogger("askharbor")
 
@@ -163,30 +163,72 @@ def purge_expired_sessions(session: Session) -> int:
 # --- bootstrap ------------------------------------------------------------------
 
 
+BOOTSTRAP_STATE_KEY = "bootstrap"
+
+
+class BootstrapError(Exception):
+    """The first admin is needed but cannot be created from the settings."""
+
+
+def bootstrap_completed(session: Session) -> bool:
+    return session.get(SystemState, BOOTSTRAP_STATE_KEY) is not None
+
+
+def mark_bootstrap_completed(session: Session, username: str, how: str) -> None:
+    session.add(
+        SystemState(
+            key=BOOTSTRAP_STATE_KEY,
+            value={
+                "completed_at": datetime.now(UTC).isoformat(timespec="seconds"),
+                "username": username,
+                "how": how,
+            },
+        )
+    )
+
+
 def bootstrap_admin(session: Session, settings: Settings) -> bool:
     """Create the first admin once, no matter how many workers start together.
 
     Runs inside the caller's transaction. A transaction-level advisory lock
-    serializes concurrent starts: the first worker to hold it sees an empty
-    users table and inserts the admin; every later one sees that row after
-    the first commit and does nothing. Existing accounts are never touched,
-    so a restart cannot reset a changed password or recreate a deleted admin.
-    Returns True when the admin was created.
+    serializes concurrent starts. Completion is recorded in ``system_state``
+    in the same transaction, and that marker alone decides whether bootstrap
+    runs again: once it is set, nothing here ever runs again, even if every
+    user is deleted later, so the documented local account cannot come back
+    on a restart. Databases from before the marker existed are recognized by
+    their users and marked as completed. Returns True when the admin was
+    created. Raises ``BootstrapError`` when an admin is needed but production
+    has no bootstrap password configured.
     """
     session.execute(text("SELECT pg_advisory_xact_lock(:lock_id)"), {"lock_id": BOOTSTRAP_LOCK_ID})
+    if bootstrap_completed(session):
+        logger.info("Bootstrap already completed; existing accounts are left alone.")
+        return False
     user_count = session.execute(select(func.count()).select_from(User)).scalar_one()
     if user_count > 0:
-        logger.info("Bootstrap admin skipped: %d account(s) already exist.", user_count)
+        mark_bootstrap_completed(session, "", how="existing-accounts")
+        logger.info(
+            "Bootstrap marked as completed: %d account(s) already exist.", user_count
+        )
         return False
+    password = settings.effective_bootstrap_password
+    if password is None:
+        raise BootstrapError(
+            "The database has no accounts and ASKHARBOR_BOOTSTRAP_ADMIN_PASSWORD is not set. "
+            "Set it (at least 12 characters) for this first start, or create an admin with "
+            "'python -m app.create_admin USERNAME' from server/. The variable can be removed "
+            "again once the first admin exists."
+        )
     session.add(
         User(
             username=settings.bootstrap_admin_username,
-            password_hash=hash_password(settings.bootstrap_admin_password),
+            password_hash=hash_password(password),
             is_admin=True,
             is_active=True,
             must_change_password=True,
         )
     )
+    mark_bootstrap_completed(session, settings.bootstrap_admin_username, how="startup")
     logger.warning(
         "Bootstrap admin '%s' created. It must change its password before doing anything else.",
         settings.bootstrap_admin_username,

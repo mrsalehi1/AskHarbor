@@ -23,7 +23,8 @@ _PRODUCTION_DEFAULT_PASSWORD_MESSAGE = (
     "ASKHARBOR_ENV is 'production' but ASKHARBOR_BOOTSTRAP_ADMIN_PASSWORD is the documented "
     "local development password. Set ASKHARBOR_BOOTSTRAP_ADMIN_PASSWORD to a secret of at "
     f"least {MIN_PASSWORD_LENGTH} characters (and ASKHARBOR_BOOTSTRAP_ADMIN_USERNAME if you want "
-    "a different admin name). It is only used once, when the users table is empty."
+    "a different admin name) for the first start, or remove the variable entirely once the "
+    "first admin exists."
 )
 _PRODUCTION_SHORT_PASSWORD_MESSAGE = (
     "ASKHARBOR_ENV is 'production' but ASKHARBOR_BOOTSTRAP_ADMIN_PASSWORD is shorter than "
@@ -88,9 +89,11 @@ class Settings(BaseSettings):
 
     # "development" accepts the documented local admin account; "production" refuses it.
     env: Literal["development", "production"] = "development"
-    # Created once, inside a database lock, when the users table is empty.
+    # Used once to create the first admin, then recorded as done in the database.
+    # Unset means the documented local password in development and "no bootstrap
+    # possible" in production, where the server still starts if bootstrap is done.
     bootstrap_admin_username: str = DEFAULT_BOOTSTRAP_USERNAME
-    bootstrap_admin_password: str = DEFAULT_BOOTSTRAP_PASSWORD
+    bootstrap_admin_password: str | None = None
     # Login sessions are stored in the database and expire after this many hours.
     session_hours: int = Field(default=12, ge=1, le=24 * 30)
     # Send the session cookie only over HTTPS. Set to false for plain http://127.0.0.1 dev.
@@ -99,7 +102,11 @@ class Settings(BaseSettings):
     login_rate_limit: int = Field(default=5, ge=0)
     login_rate_window_seconds: int = Field(default=300, ge=1)
 
-    model_config = SettingsConfigDict(env_prefix="ASKHARBOR_", env_file=".env")
+    # hide_input_in_errors keeps secrets such as the bootstrap password out of
+    # the startup error text when a setting is rejected.
+    model_config = SettingsConfigDict(
+        env_prefix="ASKHARBOR_", env_file=".env", hide_input_in_errors=True
+    )
 
     @model_validator(mode="after")
     def database_mode_needs_a_url(self) -> "Settings":
@@ -119,7 +126,7 @@ class Settings(BaseSettings):
             return self
         if not self.cookie_secure:
             raise ValueError(_PRODUCTION_INSECURE_COOKIE_MESSAGE)
-        if self.accounts_enabled:
+        if self.accounts_enabled and self.bootstrap_admin_password is not None:
             if self.bootstrap_admin_password == DEFAULT_BOOTSTRAP_PASSWORD:
                 raise ValueError(_PRODUCTION_DEFAULT_PASSWORD_MESSAGE)
             if len(self.bootstrap_admin_password) < MIN_PASSWORD_LENGTH:
@@ -129,6 +136,13 @@ class Settings(BaseSettings):
     @property
     def accounts_enabled(self) -> bool:
         return bool((self.database_url or "").strip())
+
+    @property
+    def effective_bootstrap_password(self) -> str | None:
+        """The password the first admin gets, or None when production left it unset."""
+        if self.bootstrap_admin_password is not None:
+            return self.bootstrap_admin_password
+        return None if self.env == "production" else DEFAULT_BOOTSTRAP_PASSWORD
 
     @field_validator("allowed_origins")
     @classmethod

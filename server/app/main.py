@@ -147,15 +147,18 @@ def prepare_accounts() -> None:
     if auth_service.factory is None:
         logger.info("Accounts disabled: ASKHARBOR_DATABASE_URL is not set.")
         return
-    from .auth import bootstrap_admin, purge_expired_sessions
+    from .auth import BootstrapError, bootstrap_admin, purge_expired_sessions
     from .storage import assert_database_ready, seed_sample_content
 
     assert_database_ready(auth_service.factory.kw["bind"], ALEMBIC_DIR)
-    with auth_service.factory() as db, db.begin():
-        bootstrap_admin(db, settings)
-        if settings.seed_sample_content:
-            seed_sample_content(db, settings.content_dir)
-        purged = purge_expired_sessions(db)
+    try:
+        with auth_service.factory() as db, db.begin():
+            bootstrap_admin(db, settings)
+            if settings.seed_sample_content:
+                seed_sample_content(db, settings.content_dir)
+            purged = purge_expired_sessions(db)
+    except BootstrapError as error:
+        raise SystemExit(f"AskHarbor cannot start: {error}") from None
     if purged:
         logger.info("Removed %d expired login session(s).", purged)
     if hasattr(auth_service.login_limiter, "purge_expired"):
