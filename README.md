@@ -6,130 +6,75 @@ The browser widget uses TypeScript and Shadow DOM. A Python FastAPI service supp
 
 ## Current status
 
-AskHarbor is a small multi-website service. With PostgreSQL configured, an admin creates users and websites and assigns users to websites; each user signs in to the panel at `/admin/`, sees only their websites, and edits each one's questions and answers, branding, domain name and allowed origins, copies the embed snippet, and exports or imports backups. Two fictional sample bots are loaded at first start. See [The panel](#the-panel) and [Accounts and login](#accounts-and-login).
+AskHarbor is a small multi-website service. With PostgreSQL configured, an admin creates users and websites and assigns users to websites; each user signs in to the panel at `/admin/`, sees only their websites, and edits each one's questions and answers, branding, domain name and allowed origins, copies the embed snippet, and exports or imports backups. Two fictional sample bots are loaded at first start. Start with the [quick start](#quick-start-from-a-fresh-checkout); details are under [The panel](#the-panel) and [Accounts and login](#accounts-and-login).
 
 Without a database the server still works as a single-owner tool: bots come from JSON files in `server/content/` (see [Bot content](#bot-content)) and the standalone editor at `editor.html` edits those files (see [Content editor](#content-editor)). The widget, its retry and back to menu behavior, origin validation and the per client request limit work the same in both setups. Automated tests cover the API, the configuration rules, the content format, the accounts and the browser code. Deployment automation is planned work; the [roadmap](ROADMAP.md) separates it from the features available today.
 
 The active product plan is guided FAQ support using public reference content. Earlier AI and RAG ideas are outside this plan. The current code does not call a model or retrieve documents.
 
-## Quick start
+## Quick start from a fresh checkout
 
-Open three terminals from the repository root. The first runs the API, the second builds the widget, and the third serves the example page.
+Everything below runs on a fresh Ubuntu machine with a clone of this repository. The full setup uses PostgreSQL and gives you the panel at `/admin/`; the shorter file mode at the end needs no database.
 
-On Ubuntu or Debian, install the system packages once before anything else:
-
-```bash
-sudo apt install python3 python3-venv python3-pip nodejs npm
-```
-
-Ubuntu's `python3-venv` package is required or the virtual environment will fail with an `ensurepip` error. Check that `node --version` reports 22 or newer. If the distribution package is older, install Node.js 22 from [nodejs.org](https://nodejs.org/) or with `nvm`.
-
-Terminal 1, the API:
+### 1. System packages
 
 ```bash
-cd server
-python3 -m venv .venv
-source .venv/bin/activate            # Windows PowerShell: .\.venv\Scripts\Activate.ps1
-cp .env.example .env
-python -m pip install -e ".[dev]"
-python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --no-access-log
+sudo apt update
+sudo apt install git python3 python3-venv python3-pip nodejs npm postgresql
 ```
 
-Inside the activated environment, `python` points at the virtual environment's interpreter, so the remaining commands use `python`.
+Ubuntu's `python3-venv` is required or the virtual environment fails with an `ensurepip` error. Check `node --version` reports 22 or newer; if not, install Node.js 22 from [nodejs.org](https://nodejs.org/) or with `nvm`. Python 3.11 or newer is required.
 
-Terminal 2, the widget:
+### 2. PostgreSQL role and databases
+
+Ubuntu starts PostgreSQL automatically on `127.0.0.1:5432` (check with `pg_isready`). Create a role and the application database:
 
 ```bash
-cd widget
-npm ci
-npm run build
+sudo -u postgres createuser --pwprompt askharbor     # enter the password askharbor for local use
+sudo -u postgres createdb --owner askharbor askharbor
 ```
 
-Terminal 3, the example page:
+For the test suite, also create a disposable test database and give the role the `CREATEDB` right while you run the tests (one test creates and drops an extra empty database to check the startup refusal):
 
 ```bash
-python3 -m http.server 4173 --bind 127.0.0.1 --directory widget/dist
+sudo -u postgres createdb --owner askharbor askharbor_test
+sudo -u postgres psql -c 'ALTER ROLE askharbor CREATEDB'
+# after testing, if you prefer the role without it:
+sudo -u postgres psql -c 'ALTER ROLE askharbor NOCREATEDB'
 ```
 
-Open [http://127.0.0.1:4173/](http://127.0.0.1:4173/). The page is `examples/demo.html` served next to the built widget. It talks to the demo bot at `http://127.0.0.1:8000`, whose fictional questions and answers live in `server/content/demo.json`. Click the chat button, pick a question, and follow the answer to its follow up choices.
+These are local development names and passwords. A deployment chooses its own and passes them through the environment.
 
-If the chat button does not appear, confirm the API is running and that `server/.env` allows `http://127.0.0.1:4173`.
-
-### Try the retry flow
-
-This checks the behavior fixed for [issue 1](https://github.com/mrsalehi1/AskHarbor/issues/1).
-
-1. Open the chat and stop the API in terminal 1 with `Ctrl+C`.
-2. Choose a question. One error line appears with the same question offered again as a retry.
-3. Choose it again while the API is still down. The error line and retry option stay single. Nothing stacks.
-4. Restart the API and choose the question once more.
-5. The error disappears. The question, answer and follow up choices each appear once.
-
-### Try the back to menu button
-
-1. Open the chat and choose a question, then follow it to an answer with no further choices.
-2. Use the "Menu" button in the panel header, by mouse or by tabbing to it and pressing Enter.
-3. The greeting and the original opening questions return without a page reload.
-4. Stop the API, choose a question, and use the menu button while the error is showing. The error and retry option are cleared.
-5. Restart the API, choose a question, and use the menu button before the answer arrives. The late answer is ignored and the menu stays in place.
-
-### Try the second bot and a content reload
-
-1. With the API running, open [http://127.0.0.1:8000/api/v1/bots/library](http://127.0.0.1:8000/api/v1/bots/library). This is the fictional Harbor Library bot from `server/content/library.json`.
-2. Edit the greeting in that file and save it.
-3. In a fourth terminal, send the reload signal: `kill -HUP $(pgrep -f "uvicorn app.main:app")`. Terminal 1 prints `Content reloaded from ... : demo, library`.
-4. Refresh the bot address from step 1. The new greeting is there.
-5. Break the file, for example by deleting a closing bracket, and send the signal again. Terminal 1 prints the problem with the file name, path and reason, and the previous content keeps being served.
-
-To show the library bot on the example page, change `data-bot-id="demo"` to `data-bot-id="library"` in `examples/demo.html`, run `npm run build` again and reload the page.
-
-### Try the content editor
-
-With the widget built and terminal 3 serving it, open [http://127.0.0.1:4173/editor.html](http://127.0.0.1:4173/editor.html). The editor runs entirely in the browser; the API does not need to be running. Edit the starter bot, open the chat button in the corner to preview the conversation, then use **Export JSON** and drop the downloaded file into `server/content/` (or import `server/content/demo.json` to start from the demo). See [Content editor](#content-editor).
-
-The detailed sections below cover each step and the embed snippet for other sites.
-
-## Requirements
-
-1. Python 3.11 or newer.
-2. Node.js 22 or newer.
-3. A browser for the local demo.
-
-Building and installing dependencies needs package registry access. Once those dependencies are installed, the demo uses only local services. Docker and a cloud account are not required.
-
-## Run the API
+### 3. API: environment, dependencies, migrations
 
 From the repository root:
 
 ```bash
 cd server
 python3 -m venv .venv
-```
-
-Activate the environment on macOS or Linux:
-
-```bash
-source .venv/bin/activate
-```
-
-On Windows PowerShell:
-
-```powershell
-.\.venv\Scripts\Activate.ps1
-```
-
-Copy `server/.env.example` to `server/.env`. Then, from `server/` with the environment active:
-
-```bash
+source .venv/bin/activate            # Windows PowerShell: .\.venv\Scripts\Activate.ps1
 python -m pip install -e ".[dev]"
-python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --no-access-log
+cp .env.example .env
 ```
 
-The API documentation is at [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs). The example origin setting permits the demo at `http://127.0.0.1:4173`.
+Open `server/.env` and set the database URL and, for plain `http://` on your own machine, the cookie flag:
 
-## Build and open the demo
+```bash
+ASKHARBOR_DATABASE_URL=postgresql+psycopg://askharbor:askharbor@127.0.0.1:5432/askharbor
+ASKHARBOR_COOKIE_SECURE=false
+```
 
-In another terminal, from the repository root:
+Then create the schema:
+
+```bash
+python -m alembic upgrade head
+```
+
+Every schema change ships as a migration; run the same command after pulling a new version. The server refuses to start if the database is behind.
+
+### 4. Frontend build
+
+In a second terminal, from the repository root:
 
 ```bash
 cd widget
@@ -137,40 +82,64 @@ npm ci
 npm run build
 ```
 
-In a third terminal, from the repository root:
+This produces `widget/dist/` with the widget bundle `askharbor.js`, the panel `admin.html` + `admin.js`, the standalone editor and the example page. The API serves this directory at `/admin/`, so rebuild after changing the frontend.
+
+### 5. Start and sign in
+
+Back in the first terminal (environment active, inside `server/`):
+
+```bash
+python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --no-access-log
+```
+
+The log shows the first start doing three things once: `Bootstrap admin 'admin' created`, `Sample bots loaded into the empty database`, and `Application startup complete`. Open [http://127.0.0.1:8000/admin/](http://127.0.0.1:8000/admin/) and sign in with the local development account:
+
+| Username | Password |
+| :--- | :--- |
+| `admin` | `ChangeMeLocal123!` |
+
+You are asked for a new password (12 characters or more) before anything else appears. After that the sidebar lists the two fictional sample websites, `demo` (AskHarbor) and `library` (Harbor Library). The example page at [http://127.0.0.1:8000/admin/index.html](http://127.0.0.1:8000/admin/index.html) embeds the `demo` bot from this same server, so you can see edits appear in a real widget.
+
+### 6. What to try
+
+1. **Edit and save.** Open `demo`, change the greeting, press **Save**. The status reads `Saved revision 2`; reload the example page and the widget shows the new greeting.
+2. **Conflicting saves.** Open the same website in a second tab, save a change there, then save in the first tab. The first tab reports that someone else saved a newer revision, nothing is overwritten, and one click loads their version so you can apply your edit again.
+3. **Users and access.** Under *Users*, create `editor` with a temporary password. Under *Websites*, add `editor` to `library`. Sign out, sign in as `editor`: a forced password change, then a sidebar with only `library`. The API answers `404` for anything else, not just the panel hiding it.
+4. **Domain and CORS.** On a website's *Settings* tab enter your site's domain name and the exact origins that may load the widget, such as `https://www.example.com`. Within two seconds the public bot routes answer CORS only for those origins.
+5. **Embed.** The *Install* tab shows the script snippet with the API address and bot ID filled in. See [Embed the widget](#embed-the-widget).
+6. **Backup and restore.** The *Backup* tab downloads one JSON file with settings and content and imports one back, checked completely before anything changes.
+7. **Recovery and reset.** `python -m app.create_admin NAME` from `server/` creates an admin on purpose, for example after every admin was deactivated. Deleting the sample websites is permanent; they are only loaded into an empty database.
+
+### Without PostgreSQL (file mode)
+
+Skip steps 2 and 3's database lines. Without `ASKHARBOR_DATABASE_URL` the API serves the bots from the JSON files in `server/content/` and the panel answers that accounts are not configured. Run the API as in step 5 and serve the built widget separately:
 
 ```bash
 python3 -m http.server 4173 --bind 127.0.0.1 --directory widget/dist
 ```
 
-Open [http://127.0.0.1:4173/](http://127.0.0.1:4173/). The build copies the example page into the public output folder. Use the chat button to select a question, follow an answer and close the panel. The page uses fictional support content and does not request visitor details.
+Open [http://127.0.0.1:4173/](http://127.0.0.1:4173/) for the example page (it talks to the API on port 8000; `server/.env.example` allows that origin) and [http://127.0.0.1:4173/editor.html](http://127.0.0.1:4173/editor.html) for the standalone editor, which edits content files in the browser and never contacts the server. Content changes are picked up with `kill -HUP $(pgrep -f "uvicorn app.main:app")`; see [Bot content](#bot-content).
+
+To check the widget's failure handling in either mode: stop the API, choose a question (one error line with the question offered again as a retry, never stacking), restart the API, choose it again and the error disappears. The **Menu** button in the panel header returns to the opening questions and discards a pending reply.
 
 ## Embed the widget
 
-Serve the built `widget/dist/askharbor.js` file and add this before the host page's closing `body` tag:
+The *Install* tab of each website in the panel shows the exact snippet for that website. It has this shape:
 
 ```html
 <script
-  src="https://cdn.example.com/askharbor.js"
-  data-api-url="https://faq-api.example.com"
+  src="https://faq.example.com/admin/askharbor.js"
+  data-api-url="https://faq.example.com"
   data-bot-id="demo"
   defer
 ></script>
 ```
 
-These addresses are placeholders. Replace them with your own widget and API addresses when testing a deployment. Set `ASKHARBOR_ALLOWED_ORIGINS` to the exact host origins, separated by commas. Spaces around each origin and trailing slashes are trimmed, so `https://example.com/` matches the browser origin `https://example.com`. Ports are kept. Paths are not supported.
+Paste it before the closing `</body>` tag (the footer) or in `<head>`; the script waits for the page to load. `data-bot-id` is the website's bot ID. The API serves the widget bundle at `/admin/askharbor.js`, so no separate file hosting is needed, and `ASKHARBOR_PUBLIC_URL` sets the address shown when visitors reach the API through a different host than you do.
 
-`ASKHARBOR_ALLOWED_ORIGINS` accepts a comma separated list of exact origins or `*`:
+**Which pages may load the bot** is decided by the website's allowed origins (panel, *Settings*) when it has any, otherwise by the server wide `ASKHARBOR_ALLOWED_ORIGINS`. Both are lists of exact origins, scheme and host only, for example `https://www.example.com`; spaces and trailing slashes are trimmed, ports are kept, paths are not supported. `ASKHARBOR_ALLOWED_ORIGINS` accepts `*` to allow any origin, which is meant for local development only. Leaving it unset means `*`; setting it to an empty value stops the server with an error, because an empty list would block every visitor.
 
-```bash
-ASKHARBOR_ALLOWED_ORIGINS=https://www.example.com,https://app.example.com  # production sites
-ASKHARBOR_ALLOWED_ORIGINS=http://127.0.0.1:4173                            # the local demo
-ASKHARBOR_ALLOWED_ORIGINS=*                                                # any origin, local development only
-```
-
-Leaving the variable unset is not the same as setting it to an empty value. Unset means the server falls back to the default `*` and allows any origin. Set but without a usable origin (blank, or only spaces, commas, or slashes) means the server refuses to start and prints an error naming the variable, because an empty allow list would silently block every browser request. To get the default back, delete the variable from the environment and from `server/.env` rather than leaving it empty.
-
-The widget sends a selected option ID to the API. It has no free text field, visitor account system, transcript database or analytics integration. Hosting services can still record request metadata, so check their logging settings before using the application beyond a local demo.
+The widget sends a selected option ID to the API and nothing else: no free text field, no visitor account, no transcript. Hosting services can still record request metadata.
 
 The `create({ apiUrl, botId, container? })` function is also exported for applications that import the TypeScript source.
 
@@ -271,67 +240,48 @@ A successful reload logs `Content reloaded from <directory>: demo, library`. A r
 
 ## PostgreSQL storage
 
-With `ASKHARBOR_DATABASE_URL` set, bots are served from PostgreSQL and edited in the panel; without it they come from the content files. `ASKHARBOR_CONTENT_SOURCE` can force `files` or `database`. The public endpoints and the bot IDs are identical in both modes.
+With `ASKHARBOR_DATABASE_URL` set, bots are served from PostgreSQL and edited in the panel; without it they come from the content files. `ASKHARBOR_CONTENT_SOURCE` can force `files` or `database`. The public endpoints and the bot IDs are identical in both modes. Installing PostgreSQL and creating the role and databases is step 2 of the [quick start](#quick-start-from-a-fresh-checkout).
 
-**What is stored.** One website row per bot, where the website `slug` is the public bot ID (`demo`, `library`), so existing embeds keep working. Each website has one bot document, the same validated JSON as a content file, in a JSONB column with a `revision` number. Every save must name the revision it started from and bumps it by one; a save against a stale revision changes nothing and reports the current revision, so two people editing the same bot cannot silently overwrite each other.
+**What is stored.** One `websites` row per bot, where the `slug` is the public bot ID, with the website's name, domain name and allowed origins. Each website has one bot document, the same validated JSON as a content file, in a JSONB column with a `revision` number. Accounts live in `users`, logins in `sessions`, access in `website_members`, failed login counters in `login_attempts`, every change in `audit_log`, and durable markers such as bootstrap completion in `system_state`.
 
-### Set up PostgreSQL natively on Ubuntu
+**Conflicting saves.** Every save names the revision it started from and increases it by one. If two people edit the same website, the second save finds a newer revision, writes nothing and answers `409` with the current revision. The panel shows who-saved-first wording and a button that loads the newer version, so the second person reapplies their change on top of it instead of silently undoing the first.
 
-```bash
-sudo apt install postgresql
-sudo -u postgres createuser --pwprompt askharbor   # choose a local password, e.g. askharbor
-sudo -u postgres createdb --owner askharbor askharbor
-sudo -u postgres createdb --owner askharbor askharbor_test   # only needed to run the tests
-```
+**Migrations.** `python -m alembic upgrade head` from `server/` creates or updates the schema. At startup the server checks that the database is at the current migration and refuses to start otherwise, naming the command to run. The URL comes from `ASKHARBOR_DATABASE_URL` in the environment or `server/.env`.
 
-Ubuntu starts the server automatically and listens on `127.0.0.1:5432`. Check with `pg_isready`. These are local development names and passwords; a deployment sets its own credentials through the environment.
+**Sample data.** On the first start with no websites at all, the two fictional bots in `server/content/` are loaded as the websites `demo` and `library`, together with the bootstrap admin and inside the same database lock, so several workers starting together load them once. They are never loaded again while any website exists; deleting them in the panel is permanent. `ASKHARBOR_SEED_SAMPLE_CONTENT=false` turns the seeding off.
 
-### Migrate, import and run
+**Importing content files.** `python -m app.import_content [directory] [--replace]` loads a directory of content files as websites: the whole directory is validated first, everything commits in one transaction, existing bot IDs are skipped unless `--replace` is given. This is how the sample data is loaded and how a set of files from the standalone editor gets into the database.
 
-From `server/` with the environment active, set the URL (or put it in `server/.env`):
-
-```bash
-export ASKHARBOR_DATABASE_URL=postgresql+psycopg://askharbor:askharbor@127.0.0.1:5432/askharbor
-python -m alembic upgrade head          # create or update the schema
-python -m app.import_content            # load server/content into the database
-ASKHARBOR_CONTENT_SOURCE=database python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --no-access-log
-```
-
-The import validates the whole directory with the usual content rules before anything is written and commits all bots in one transaction: one bad file means nothing is imported and every problem is listed. A bot ID that already exists in the database is skipped and reported; run `python -m app.import_content --replace` to overwrite existing bots instead, which bumps their revisions like any other save. A different directory can be passed as an argument.
-
-In database mode the server reads content live, so there is no reload signal to send: a change is visible on the next request, in every worker. `SIGHUP` is accepted and logged as ignored. At startup the server checks that the database is reachable and migrated to the current head, and refuses to start with a message naming `python -m alembic upgrade head` otherwise, so a schema change cannot be half-applied silently. Switching back to file mode is `ASKHARBOR_CONTENT_SOURCE=files` (or removing the variable); the files are untouched by the import.
-
-### Test against a real PostgreSQL
-
-The database tests only run when `ASKHARBOR_TEST_DATABASE_URL` points at a disposable database. They migrate it from scratch with Alembic and truncate tables between tests, so never point this at a database whose content you want to keep.
+**Testing against PostgreSQL.** The database tests run only when `ASKHARBOR_TEST_DATABASE_URL` points at a disposable database. They drop and recreate its `public` schema, migrate from scratch with Alembic and truncate tables between tests, so never point this at a database you want to keep. One test creates and drops an extra empty database, which needs the `CREATEDB` right on the role for the duration of the test run (quick start, step 2):
 
 ```bash
 cd server
 ASKHARBOR_TEST_DATABASE_URL=postgresql+psycopg://askharbor:askharbor@127.0.0.1:5432/askharbor_test python -m pytest
 ```
 
-Without the variable those tests are skipped and the rest of the suite runs as before. CI runs them against a PostgreSQL 16 service container. The suite includes a schema drift check that fails if the SQLAlchemy models and the Alembic migrations stop describing the same tables.
+Without the variable those tests are skipped and the rest of the suite runs as before. CI runs them against a PostgreSQL 16 service container. A schema drift test fails when the SQLAlchemy models and the migrations stop describing the same tables.
 
 **Limitations.**
 
 - The standalone `editor.html` edits files, not the database; use the panel for database-backed websites, or export from one and import into the other.
-- Database mode queries PostgreSQL on each request (with a small per-revision cache for the built definition). That is fine at demo scale and unmeasured beyond it.
-- The import command and the editor do not talk to each other yet; moving an edited bot into the database is export, then import.
+- Database mode queries PostgreSQL on each request (with a small per revision cache for the built definition). Fine at demo scale, unmeasured beyond it.
 
 ## Accounts and login
 
-Accounts are available whenever `ASKHARBOR_DATABASE_URL` is set and the migrations have run, in either content mode. Without a database the account routes answer `503` with an explanation and the widget is unaffected. This round provides login, logout, sessions, the bootstrap admin and the forced password change. Creating users and websites, assigning access and the admin pages are the next round, so for now the only thing a signed in admin can do is list websites at `GET /api/v1/websites`.
+Accounts are available whenever `ASKHARBOR_DATABASE_URL` is set and the migrations have run, in either content mode. Without a database the account routes answer `503` with an explanation and the widget is unaffected. Users sign in with a username and password; admins create users and websites and decide who may edit what, in [the panel](#the-panel) or through the API below.
 
-**Local development account.** On first start with an empty `users` table the server creates one admin:
+**Local development account.** On the first start, when bootstrap has never run and the `users` table is empty, the server creates one admin:
 
 | Setting | Default | Variable |
 | :--- | :--- | :--- |
 | Username | `admin` | `ASKHARBOR_BOOTSTRAP_ADMIN_USERNAME` |
-| Password | `ChangeMeLocal123!` | `ASKHARBOR_BOOTSTRAP_ADMIN_PASSWORD` |
+| Password | `ChangeMeLocal123!` (development only) | `ASKHARBOR_BOOTSTRAP_ADMIN_PASSWORD` |
 
-The account is created with a forced password change: until it is changed, every route except login, logout, `GET /api/v1/auth/me` and the password change itself answers `403` with the code `password_change_required`. The bootstrap runs in every worker at startup inside a PostgreSQL advisory lock, so starting several workers together still creates exactly one admin. It only ever runs when the table is empty: a restart never recreates the account, resets a changed password or touches any other user. To start over locally, drop the `users` rows (or the database) deliberately.
+The account starts with a forced password change: until it is changed, every route except login, logout, `GET /api/v1/auth/me` and the password change itself answers `403` with the code `password_change_required`, and the panel shows nothing but the change form. The bootstrap runs in every worker at startup inside a PostgreSQL advisory lock, so several workers starting together still create exactly one admin.
 
-**Production.** Set `ASKHARBOR_ENV=production`. The server then refuses to start while the bootstrap password is the documented local one or shorter than 12 characters, or while `ASKHARBOR_COOKIE_SECURE` is false, and prints which variable to fix. Supply `ASKHARBOR_BOOTSTRAP_ADMIN_PASSWORD` (and optionally the username) once for the first start; it is ignored afterwards and can be removed. The admin still has to change that password at first login.
+**Bootstrap runs once, and that is recorded on its own.** Completion is written to the `system_state` table in the same transaction as the admin. From then on the bootstrap never runs again: a restart does not recreate the account or reset a changed password, and deleting every user later does not bring the documented account back either. Databases created before this marker existed are recognized by their users and marked as completed at the next start. If every admin is ever lost, recover deliberately with `python -m app.create_admin NAME` from `server/` (`--reset` to repurpose an existing user); it asks for a temporary password, or reads `ASKHARBOR_NEW_ADMIN_PASSWORD`, and the account must change it at first sign in.
+
+**Production.** Set `ASKHARBOR_ENV=production`. For the first start, supply `ASKHARBOR_BOOTSTRAP_ADMIN_PASSWORD` (12 characters or more; the username is optional). The server refuses to start while that variable holds the documented local password or a shorter one, or while `ASKHARBOR_COOKIE_SECURE` is false, and names the variable to fix without echoing its value. After the first admin exists, remove the variable: the server starts normally without it because completion is recorded in the database. A production database that has no accounts and no bootstrap password refuses to start and says so, rather than creating an account with a known password.
 
 **Endpoints.** All under `/api/v1`. Every route except the first four requires a session whose password change is done; the admin routes also require `is_admin`; the website routes require admin or membership and answer `404` otherwise.
 
@@ -407,6 +357,18 @@ python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --no-access-log
 
 Open [http://127.0.0.1:8000/admin/](http://127.0.0.1:8000/admin/), sign in as `admin` / `ChangeMeLocal123!`, choose a new password, and the `demo` and `library` websites are ready to edit. The example page at [http://127.0.0.1:8000/admin/index.html](http://127.0.0.1:8000/admin/index.html) embeds the `demo` bot from the same server.
 
+## Production checklist
+
+- `ASKHARBOR_ENV=production`. Refuses the development defaults described above.
+- `ASKHARBOR_DATABASE_URL` pointing at your PostgreSQL, migrated with `python -m alembic upgrade head` before each start of a new version.
+- `ASKHARBOR_BOOTSTRAP_ADMIN_PASSWORD` set only for the first start, then removed.
+- HTTPS in front of the API. The session cookie is `Secure`, `HttpOnly`, `SameSite=Lax` and `ASKHARBOR_COOKIE_SECURE` must stay true; if TLS ends at a proxy, the Origin check only compares the host, so it keeps working.
+- `ASKHARBOR_PUBLIC_URL` set to the address visitors use, so embed snippets are right.
+- `ASKHARBOR_ALLOWED_ORIGINS` set to your sites, or rely on per website origins in the panel. Never `*` in production.
+- `ASKHARBOR_ADMIN_DIST` pointing at a built `widget/dist` from the same version.
+- `ASKHARBOR_SEED_SAMPLE_CONTENT=false` unless you want the fictional sample websites.
+- A reverse proxy limit on `POST /api/v1/auth/login` and the messages route in addition to the built in ones; behind a proxy all visitors share the proxy's client address.
+
 ## Content editor
 
 `editor.html` in the built widget output is a local, single page editor for one bot at a time. Build the widget and serve `widget/dist` as in the quick start, then open [http://127.0.0.1:4173/editor.html](http://127.0.0.1:4173/editor.html). Everything happens inside the browser tab: the editor makes no network requests, so it works without the API and nothing you type leaves the machine.
@@ -476,11 +438,12 @@ Content-Type: application/json
 From `server/`, with its environment active:
 
 ```bash
-python -m pytest
+python -m pytest                                   # file mode; database tests are skipped
+ASKHARBOR_TEST_DATABASE_URL=postgresql+psycopg://askharbor:askharbor@127.0.0.1:5432/askharbor_test python -m pytest
 python -m ruff check .
 ```
 
-From `widget/`:
+The second command runs the database tests too and needs the disposable test database and the temporary `CREATEDB` right from the quick start. From `widget/`:
 
 ```bash
 npm test
@@ -488,7 +451,7 @@ npm run typecheck
 npm run build
 ```
 
-GitHub Actions runs these checks on pushes and pull requests. Browser checks for keyboard navigation, mobile layout and request failures are described in [CONTRIBUTING.md](CONTRIBUTING.md).
+GitHub Actions runs all of these on pushes and pull requests, with a PostgreSQL 16 service for the database tests. Browser checks for keyboard navigation, mobile layout and request failures are described in [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Project files
 
