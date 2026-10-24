@@ -45,3 +45,22 @@ def test_rejects_unknown_bot_and_option() -> None:
 def test_validates_empty_option() -> None:
     response = client.post("/api/v1/bots/demo/messages", json={"option_id": ""})
     assert response.status_code == 422
+
+
+def test_serves_a_second_bot_from_its_own_file() -> None:
+    response = client.get("/api/v1/bots/library")
+    body = response.json()
+
+    assert response.status_code == 200
+    assert body["name"] == "Harbor Library"
+    assert body["primary_color"] == "#0f766e"
+    assert [option["id"] for option in body["options"]] == ["hours", "card", "borrowing", "events"]
+
+    answer = client.post("/api/v1/bots/library/messages", json={"option_id": "card"})
+    assert answer.status_code == 200
+    assert [option["id"] for option in answer.json()["options"]] == ["card-cost", "borrowing"]
+
+
+def test_bots_do_not_share_options() -> None:
+    response = client.post("/api/v1/bots/library/messages", json={"option_id": "getting-started"})
+    assert response.status_code == 400

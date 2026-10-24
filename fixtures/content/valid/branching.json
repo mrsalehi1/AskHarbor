@@ -1,0 +1,46 @@
+{
+  "format_version": 1,
+  "config": {
+    "id": "Branching_Bot-2",
+    "name": "Branching bot",
+    "greeting": "Welcome. Choose a topic to begin.",
+    "launcher_label": "Open the guided FAQ",
+    "primary_color": "#1A2b3C",
+    "opening_option_ids": [
+      "start",
+      "pricing"
+    ]
+  },
+  "answers": [
+    {
+      "id": "start",
+      "label": "How do I start?",
+      "answer": "Pick a topic.",
+      "next_option_ids": [
+        "pricing",
+        "trial"
+      ]
+    },
+    {
+      "id": "pricing",
+      "label": "What does it cost?",
+      "answer": "It is free for one bot.",
+      "next_option_ids": [
+        "trial"
+      ]
+    },
+    {
+      "id": "trial",
+      "label": "Is there a trial?",
+      "answer": "Yes, thirty days.\nNo card is needed.",
+      "next_option_ids": [
+        "start"
+      ]
+    },
+    {
+      "id": "orphan_01",
+      "label": "Unreachable but allowed",
+      "answer": "Unreachable answers are not an error."
+    }
+  ]
+}

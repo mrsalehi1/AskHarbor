@@ -1,0 +1,38 @@
+{
+  "description": "answers are a list with an id field, not an object keyed by id",
+  "expected_problems": [
+    {
+      "path": "answers",
+      "contains": "must be a list"
+    }
+  ],
+  "content": {
+    "format_version": 1,
+    "config": {
+      "id": "shop",
+      "name": "Shop help",
+      "greeting": "Hi. What do you need?",
+      "launcher_label": "Open shop help",
+      "primary_color": "#336699",
+      "opening_option_ids": [
+        "start",
+        "pricing"
+      ]
+    },
+    "answers": {
+      "start": {
+        "id": "start",
+        "label": "Where do I start?",
+        "answer": "Pick a topic.",
+        "next_option_ids": [
+          "pricing"
+        ]
+      },
+      "pricing": {
+        "id": "pricing",
+        "label": "What does it cost?",
+        "answer": "It is free."
+      }
+    }
+  }
+}

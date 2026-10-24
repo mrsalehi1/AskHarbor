@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>AskHarbor content editor</title>
+    <style>
+      :root { font-family: system-ui, sans-serif; color: #17233b; background: #f3f6fb; }
+      body { margin: 0; }
+      header { padding: 1rem 1.5rem; }
+      header h1 { font-size: 1.4rem; margin: 0; }
+      header p { margin: .25rem 0 0; color: #475467; }
+      #askharbor-editor {
+        display: grid;
+        grid-template-areas: "toolbar toolbar" "form side";
+        grid-template-columns: minmax(0, 1fr) 24rem;
+        gap: 1rem;
+        padding: 0 1.5rem 2rem;
+        align-items: start;
+      }
+      .toolbar {
+        grid-area: toolbar;
+        background: #fff;
+        border-radius: .75rem;
+        padding: .75rem 1rem;
+        display: flex;
+        flex-wrap: wrap;
+        gap: .75rem;
+        align-items: center;
+      }
+      .toolbar .import-label { font-weight: 600; }
+      #bot-form { grid-area: form; display: grid; gap: 1rem; }
+      .side { grid-area: side; display: grid; gap: 1rem; position: sticky; top: 1rem; }
+      fieldset, .problems, .preview {
+        background: #fff;
+        border: 1px solid #e4e9f2;
+        border-radius: .75rem;
+        padding: 1rem;
+        margin: 0;
+      }
+      legend, .problems h2, .preview h2 { font-size: 1rem; font-weight: 700; padding: 0 .25rem; margin: 0; }
+      .field { display: grid; gap: .25rem; margin: .75rem 0; }
+      .field label { font-size: .85rem; font-weight: 600; color: #344054; }
+      input, textarea, select {
+        font: inherit;
+        padding: .45rem .6rem;
+        border: 1px solid #cbd5e4;
+        border-radius: .5rem;
+        background: #fff;
+      }
+      textarea { resize: vertical; }
+      .field-invalid { border-color: #d92d20; outline: 1px solid #d92d20; }
+      button { font: inherit; padding: .4rem .8rem; border-radius: .5rem; border: 1px solid #cbd5e4; background: #fff; cursor: pointer; }
+      button:disabled { opacity: .5; cursor: not-allowed; }
+      #export-button { background: #155eef; border-color: #155eef; color: #fff; font-weight: 600; }
+      .id-row { display: flex; gap: .4rem; margin: .35rem 0; align-items: center; }
+      .id-row select { flex: 1; min-width: 0; }
+      .id-list .add, #add-answer, .remove-answer { margin-top: .5rem; }
+      .hint { font-size: .85rem; color: #475467; margin: .5rem 0 0; }
+      #problem-list { margin: .5rem 0 0; padding-left: 1.25rem; color: #b42318; font-size: .9rem; }
+      #problem-list li { margin: .25rem 0; }
+      #no-problems { color: #067647; margin: .5rem 0 0; font-size: .9rem; }
+      #preview-note { color: #475467; font-size: .9rem; margin: .5rem 0 0; }
+      #import-status { font-size: .9rem; }
+      #import-status .import-error { color: #b42318; font-weight: 600; margin: 0; }
+      #import-status ul { margin: .25rem 0 0; padding-left: 1.25rem; color: #b42318; }
+      #import-status p { margin: 0; }
+      :focus-visible { outline: 3px solid #155eef; outline-offset: 2px; }
+      @media (max-width: 900px) {
+        #askharbor-editor { grid-template-areas: "toolbar" "side" "form"; grid-template-columns: 1fr; }
+        .side { position: static; }
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>AskHarbor content editor</h1>
+      <p>Edit a bot, watch the preview in the corner, then export the JSON file for the API. Everything stays in this browser tab. Fictional content only.</p>
+    </header>
+    <div id="askharbor-editor"></div>
+    <script src="./editor.js" defer></script>
+  </body>
+</html>

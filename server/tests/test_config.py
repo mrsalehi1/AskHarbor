@@ -77,3 +77,123 @@ def test_origins_with_ports_keep_the_port(monkeypatch: pytest.MonkeyPatch) -> No
 def test_slash_only_value_refuses_to_start(monkeypatch: pytest.MonkeyPatch) -> None:
     with pytest.raises(ValidationError, match=ENV_VAR):
         make_settings(monkeypatch, "/, //")
+
+
+# --- content directory -------------------------------------------------------
+
+CONTENT_VAR = "ASKHARBOR_CONTENT_DIR"
+
+
+def test_content_dir_defaults_to_the_server_content_folder(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv(CONTENT_VAR, raising=False)
+    settings = Settings(_env_file=None)
+    assert settings.content_dir.name == "content"
+    assert settings.content_dir.parent.name == "server"
+    assert (settings.content_dir / "demo.json").is_file()
+
+
+def test_content_dir_can_be_overridden(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv(CONTENT_VAR, "/srv/askharbor/bots")
+    settings = Settings(_env_file=None)
+    assert str(settings.content_dir) == "/srv/askharbor/bots"
+
+
+@pytest.mark.parametrize("value", ["", "   "])
+def test_blank_content_dir_refuses_to_start(monkeypatch: pytest.MonkeyPatch, value: str) -> None:
+    monkeypatch.setenv(CONTENT_VAR, value)
+    with pytest.raises(ValidationError) as excinfo:
+        Settings(_env_file=None)
+    message = str(excinfo.value)
+    assert CONTENT_VAR in message
+    assert "server/content" in message
+
+
+# --- accounts ------------------------------------------------------------------
+
+DB_URL = "postgresql+psycopg://askharbor:secret@127.0.0.1:5432/askharbor"
+
+
+def production(monkeypatch: pytest.MonkeyPatch, **values: str) -> Settings:
+    monkeypatch.setenv("ASKHARBOR_ENV", "production")
+    monkeypatch.setenv("ASKHARBOR_DATABASE_URL", DB_URL)
+    for name in (
+        "ASKHARBOR_BOOTSTRAP_ADMIN_PASSWORD",
+        "ASKHARBOR_BOOTSTRAP_ADMIN_USERNAME",
+        "ASKHARBOR_COOKIE_SECURE",
+    ):
+        monkeypatch.delenv(name, raising=False)
+    for name, value in values.items():
+        monkeypatch.setenv(name, value)
+    return Settings(_env_file=None)
+
+
+def test_development_accepts_the_documented_local_admin(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("ASKHARBOR_ENV", raising=False)
+    monkeypatch.delenv("ASKHARBOR_BOOTSTRAP_ADMIN_PASSWORD", raising=False)
+    monkeypatch.setenv("ASKHARBOR_DATABASE_URL", DB_URL)
+    settings = Settings(_env_file=None)
+    assert settings.env == "development"
+    assert settings.bootstrap_admin_username == "admin"
+    assert settings.bootstrap_admin_password is None
+    assert settings.effective_bootstrap_password == "ChangeMeLocal123!"
+    assert settings.session_hours == 12
+    assert settings.cookie_secure is True
+    assert settings.accounts_enabled is True
+
+
+def test_production_without_a_bootstrap_password_starts_but_cannot_bootstrap(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Removing the variable after the first start must not stop the server."""
+    settings = production(monkeypatch)
+    assert settings.bootstrap_admin_password is None
+    assert settings.effective_bootstrap_password is None
+
+
+def test_production_refuses_the_default_admin_password(monkeypatch: pytest.MonkeyPatch) -> None:
+    with pytest.raises(ValidationError) as excinfo:
+        production(monkeypatch, ASKHARBOR_BOOTSTRAP_ADMIN_PASSWORD="ChangeMeLocal123!")
+    message = str(excinfo.value)
+    assert "ASKHARBOR_BOOTSTRAP_ADMIN_PASSWORD" in message
+    assert "local development password" in message
+    assert "ChangeMeLocal123!" not in message
+
+
+def test_production_refuses_a_short_admin_password(monkeypatch: pytest.MonkeyPatch) -> None:
+    with pytest.raises(ValidationError, match="shorter than 12"):
+        production(monkeypatch, ASKHARBOR_BOOTSTRAP_ADMIN_PASSWORD="short")
+
+
+def test_production_accepts_its_own_credentials(monkeypatch: pytest.MonkeyPatch) -> None:
+    settings = production(
+        monkeypatch,
+        ASKHARBOR_BOOTSTRAP_ADMIN_PASSWORD="a-real-secret-chosen-by-ops",
+        ASKHARBOR_BOOTSTRAP_ADMIN_USERNAME="ops-admin",
+    )
+    assert settings.bootstrap_admin_username == "ops-admin"
+
+
+def test_production_refuses_insecure_cookies(monkeypatch: pytest.MonkeyPatch) -> None:
+    with pytest.raises(ValidationError, match="ASKHARBOR_COOKIE_SECURE"):
+        production(
+            monkeypatch,
+            ASKHARBOR_BOOTSTRAP_ADMIN_PASSWORD="a-real-secret-chosen-by-ops",
+            ASKHARBOR_COOKIE_SECURE="false",
+        )
+
+
+def test_production_without_accounts_does_not_need_a_bootstrap_password(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("ASKHARBOR_ENV", "production")
+    monkeypatch.delenv("ASKHARBOR_DATABASE_URL", raising=False)
+    monkeypatch.delenv("ASKHARBOR_BOOTSTRAP_ADMIN_PASSWORD", raising=False)
+    settings = Settings(_env_file=None)
+    assert settings.accounts_enabled is False
+
+
+def test_accounts_are_disabled_without_a_database_url(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("ASKHARBOR_DATABASE_URL", raising=False)
+    assert Settings(_env_file=None).accounts_enabled is False

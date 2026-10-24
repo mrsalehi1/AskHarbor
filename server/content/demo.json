@@ -1,0 +1,49 @@
+{
+  "format_version": 1,
+  "config": {
+    "id": "demo",
+    "name": "AskHarbor",
+    "greeting": "Hi! What can I help you with?",
+    "launcher_label": "Open support chat",
+    "primary_color": "#155eef",
+    "opening_option_ids": [
+      "getting-started",
+      "features",
+      "contact"
+    ]
+  },
+  "answers": [
+    {
+      "id": "getting-started",
+      "label": "How do I get started?",
+      "answer": "Add the AskHarbor script before your closing body tag and provide your server URL and bot ID.",
+      "next_option_ids": [
+        "installation",
+        "customize"
+      ]
+    },
+    {
+      "id": "features",
+      "label": "What can this chatbot do?",
+      "answer": "This version provides guided answers from your server. You choose a question and receive a predefined answer with any follow up choices.",
+      "next_option_ids": [
+        "customize"
+      ]
+    },
+    {
+      "id": "contact",
+      "label": "How can I contact support?",
+      "answer": "Email your support team at support@example.com."
+    },
+    {
+      "id": "installation",
+      "label": "Show installation details",
+      "answer": "Serve the compiled widget, then set data-api-url and data-bot-id on the script element."
+    },
+    {
+      "id": "customize",
+      "label": "Can I customize it?",
+      "answer": "Yes. Bot name, greeting, launcher label, color, questions, and answers all come from the server."
+    }
+  ]
+}

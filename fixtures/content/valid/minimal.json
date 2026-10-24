@@ -1,0 +1,20 @@
+{
+  "format_version": 1,
+  "config": {
+    "id": "minimal",
+    "name": "Minimal bot",
+    "greeting": "Hello. Pick a question.",
+    "launcher_label": "Open help",
+    "primary_color": "#000",
+    "opening_option_ids": [
+      "only"
+    ]
+  },
+  "answers": [
+    {
+      "id": "only",
+      "label": "The only question?",
+      "answer": "The only answer."
+    }
+  ]
+}

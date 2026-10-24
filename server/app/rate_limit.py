@@ -40,6 +40,23 @@ class FixedWindowRateLimiter:
     def reset(self) -> None:
         self._windows.clear()
 
+    def peek(self, key: str) -> int | None:
+        """Report whether ``key`` is currently over the limit without counting.
+
+        Lets a caller refuse an attempt before doing the work, and count only
+        the attempts it wants to count (for example failed logins only).
+        """
+        if self.limit <= 0:
+            return None
+        entry = self._windows.get(key)
+        if entry is None:
+            return None
+        now = self.clock()
+        start, count = entry
+        if now - start >= self.window_seconds or count < self.limit:
+            return None
+        return max(1, math.ceil(start + self.window_seconds - now))
+
     def hit(self, key: str) -> int | None:
         """Record one request for ``key``.
 

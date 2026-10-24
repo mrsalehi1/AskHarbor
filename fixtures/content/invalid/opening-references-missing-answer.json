@@ -1,0 +1,39 @@
+{
+  "description": "an opening option has no answer",
+  "expected_problems": [
+    {
+      "path": "config.opening_option_ids[2]",
+      "contains": "opening option 'returns' has no matching answer"
+    }
+  ],
+  "content": {
+    "format_version": 1,
+    "config": {
+      "id": "shop",
+      "name": "Shop help",
+      "greeting": "Hi. What do you need?",
+      "launcher_label": "Open shop help",
+      "primary_color": "#336699",
+      "opening_option_ids": [
+        "start",
+        "pricing",
+        "returns"
+      ]
+    },
+    "answers": [
+      {
+        "id": "start",
+        "label": "Where do I start?",
+        "answer": "Pick a topic.",
+        "next_option_ids": [
+          "pricing"
+        ]
+      },
+      {
+        "id": "pricing",
+        "label": "What does it cost?",
+        "answer": "It is free."
+      }
+    ]
+  }
+}

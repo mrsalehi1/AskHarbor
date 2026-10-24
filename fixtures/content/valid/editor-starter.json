@@ -1,0 +1,28 @@
+{
+  "format_version": 1,
+  "config": {
+    "id": "my-first-bot",
+    "name": "My first bot",
+    "greeting": "Hi! Pick a question to see its answer.",
+    "launcher_label": "Open the FAQ",
+    "primary_color": "#155eef",
+    "opening_option_ids": [
+      "example-question"
+    ]
+  },
+  "answers": [
+    {
+      "id": "example-question",
+      "label": "Where does this answer come from?",
+      "answer": "From your draft. Edit this text in the form and watch the preview follow.",
+      "next_option_ids": [
+        "second-question"
+      ]
+    },
+    {
+      "id": "second-question",
+      "label": "What else can I add?",
+      "answer": "More answers, opening questions and follow up choices. Export when it is ready."
+    }
+  ]
+}

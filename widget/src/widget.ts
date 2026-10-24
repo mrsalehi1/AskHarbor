@@ -1,9 +1,9 @@
 import { styles } from "./styles";
-import type { BotConfig, ChatOption, MessageResponse, WidgetOptions } from "./types";
+import { HttpTransport } from "./transport";
+import type { BotConfig, BotTransport, ChatOption, WidgetOptions } from "./types";
 
 export class AskHarborWidget {
-  private readonly apiUrl: string;
-  private readonly botId: string;
+  private readonly transport: BotTransport;
   private readonly host: HTMLElement;
   private readonly shadow: ShadowRoot;
   private config?: BotConfig;
@@ -15,8 +15,13 @@ export class AskHarborWidget {
   private flow = 0;
 
   constructor(options: WidgetOptions) {
-    this.apiUrl = options.apiUrl.replace(/\/$/, "");
-    this.botId = options.botId;
+    if (options.transport) {
+      this.transport = options.transport;
+    } else if (options.apiUrl && options.botId) {
+      this.transport = new HttpTransport(options.apiUrl, options.botId);
+    } else {
+      throw new Error("AskHarbor needs apiUrl and botId, or a transport.");
+    }
     this.host = document.createElement("div");
     this.host.dataset.askharbor = "widget";
     this.shadow = this.host.attachShadow({ mode: "open" });
@@ -25,11 +30,7 @@ export class AskHarborWidget {
 
   async init(): Promise<void> {
     try {
-      const response = await fetch(
-        `${this.apiUrl}/api/v1/bots/${encodeURIComponent(this.botId)}`,
-      );
-      if (!response.ok) throw new Error(`Configuration request failed (${response.status})`);
-      this.config = (await response.json()) as BotConfig;
+      this.config = await this.transport.getConfig();
       this.render();
     } catch (error) {
       console.error("AskHarbor could not start:", error);
@@ -175,16 +176,7 @@ export class AskHarborWidget {
     if (this.conversation) this.conversation.scrollTop = this.conversation.scrollHeight;
 
     try {
-      const response = await fetch(
-        `${this.apiUrl}/api/v1/bots/${encodeURIComponent(this.botId)}/messages`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ option_id: option.id }),
-        },
-      );
-      if (!response.ok) throw new Error(`Message request failed (${response.status})`);
-      const result = (await response.json()) as MessageResponse;
+      const result = await this.transport.sendMessage(option.id);
       if (flow !== this.flow) return;
       status.remove();
       this.addMessage(result.answer, "bot");

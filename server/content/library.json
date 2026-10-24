@@ -1,0 +1,69 @@
+{
+  "format_version": 1,
+  "config": {
+    "id": "library",
+    "name": "Harbor Library",
+    "greeting": "Welcome to Harbor Library. What would you like to know?",
+    "launcher_label": "Open library help",
+    "primary_color": "#0f766e",
+    "opening_option_ids": [
+      "hours",
+      "card",
+      "borrowing",
+      "events"
+    ]
+  },
+  "answers": [
+    {
+      "id": "hours",
+      "label": "When is the library open?",
+      "answer": "The reading room is open Monday to Friday from 9 am to 7 pm and on Saturday from 10 am to 4 pm. It is closed on Sunday.",
+      "next_option_ids": [
+        "holiday-hours"
+      ]
+    },
+    {
+      "id": "holiday-hours",
+      "label": "What about public holidays?",
+      "answer": "The library is closed on public holidays. The return box by the main entrance stays open, and items returned there are checked in on the next working day."
+    },
+    {
+      "id": "card",
+      "label": "How do I get a library card?",
+      "answer": "Bring a photo ID and proof of address to the front desk. Cards are issued while you wait and work on the same day.",
+      "next_option_ids": [
+        "card-cost",
+        "borrowing"
+      ]
+    },
+    {
+      "id": "card-cost",
+      "label": "Does a card cost anything?",
+      "answer": "A card is free for residents. Visitors can get a one year card for a small fee, which is listed at the front desk."
+    },
+    {
+      "id": "borrowing",
+      "label": "How many items can I borrow?",
+      "answer": "You can have up to 12 items on loan at a time. Books are lent for three weeks and films for one week.",
+      "next_option_ids": [
+        "renewals",
+        "late-returns"
+      ]
+    },
+    {
+      "id": "renewals",
+      "label": "How do I renew a loan?",
+      "answer": "Renew online with your card number, by phone, or at the desk. Each item can be renewed twice unless another member has reserved it."
+    },
+    {
+      "id": "late-returns",
+      "label": "What happens if I return something late?",
+      "answer": "There are no late fees. Your account is paused until the overdue items come back, and you can borrow again as soon as they are returned."
+    },
+    {
+      "id": "events",
+      "label": "Are there events for children?",
+      "answer": "Story time runs every Wednesday at 10:30 am for children under six. The monthly programme is posted at the entrance and on the library website."
+    }
+  ]
+}
